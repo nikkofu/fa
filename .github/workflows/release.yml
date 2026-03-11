@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.84.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Build release binary
+        run: cargo build --release -p fa-server
+
+      - name: Package artifact
+        run: tar -czf fa-server-linux-amd64.tar.gz -C target/release fa-server
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: fa-server-linux-amd64.tar.gz
+          generate_release_notes: true

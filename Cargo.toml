@@ -1,0 +1,28 @@
+[workspace]
+members = [
+    "apps/fa-server",
+    "crates/fa-core",
+    "crates/fa-domain",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.84"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "=1.0.97"
+axum = { version = "=0.8.1", features = ["json", "macros"] }
+chrono = { version = "=0.4.40", features = ["clock", "serde"] }
+fa-core = { path = "crates/fa-core" }
+fa-domain = { path = "crates/fa-domain" }
+serde = { version = "=1.0.219", features = ["derive"] }
+serde_json = "=1.0.140"
+thiserror = "=2.0.12"
+tokio = { version = "=1.44.1", features = ["macros", "rt-multi-thread", "signal"] }
+tower-http = { version = "=0.6.2", features = ["cors", "trace"] }
+tracing = "=0.1.41"
+tracing-subscriber = { version = "=0.3.19", features = ["env-filter", "fmt"] }
+uuid = { version = "=1.16.0", features = ["serde", "v4"] }
