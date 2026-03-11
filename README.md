@@ -106,6 +106,31 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
   }' | jq
 ```
 
+提交任务 intake 请求并生成可追踪任务记录：
+
+```bash
+curl -sS http://127.0.0.1:8080/api/v1/tasks/intake \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0",
+    "title": "Investigate spindle temperature drift",
+    "description": "Diagnose repeated spindle temperature drift before the next shift.",
+    "priority": "critical",
+    "risk": "high",
+    "initiator": {
+      "id": "worker_1001",
+      "display_name": "Liu Supervisor",
+      "role": "Production Supervisor"
+    },
+    "stakeholders": [],
+    "equipment_ids": ["eq_cnc_01"],
+    "integrations": ["mes", "cmms"],
+    "desired_outcome": "Recover stable spindle temperature within tolerance",
+    "requires_human_approval": true,
+    "requires_diagnostic_loop": true
+  }' | jq
+```
+
 ## 仓库治理
 
 - Git 远端已配置为 `https://github.com/nikkofu/fa.git`

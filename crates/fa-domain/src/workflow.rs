@@ -76,6 +76,21 @@ pub enum ApprovalPolicy {
     PlantManager,
 }
 
+impl ApprovalPolicy {
+    pub fn requires_human_approval(self) -> bool {
+        !matches!(self, ApprovalPolicy::Auto)
+    }
+
+    pub fn required_role(self) -> &'static str {
+        match self {
+            ApprovalPolicy::Auto => "system",
+            ApprovalPolicy::OperationsSupervisor => "operations_supervisor",
+            ApprovalPolicy::SafetyOfficer => "safety_officer",
+            ApprovalPolicy::PlantManager => "plant_manager",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedStep {
     pub sequence: u8,

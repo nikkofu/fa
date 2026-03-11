@@ -1,8 +1,8 @@
 use chrono::Utc;
 
 use fa_domain::{
-    AgenticPattern, ApprovalPolicy, ExecutionPlan, PlanOwner, PlannedStep, TaskPriority,
-    TaskRequest, TaskRisk,
+    AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, LifecycleError, PlanOwner,
+    PlannedStep, PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
 };
 
 use crate::blueprint::{bootstrap_blueprint, PlatformBlueprint};
@@ -43,6 +43,24 @@ impl WorkOrchestrator {
             steps,
             created_at: Utc::now(),
         }
+    }
+
+    pub fn intake_task(&self, request: TaskRequest) -> Result<PlannedTaskBundle, LifecycleError> {
+        let plan = self.plan_task(request.clone());
+        let approval_policy = plan.approval_policy;
+        let mut task = TaskRecord::draft(request.clone());
+        task.apply_plan(plan)?;
+
+        let approval = if approval_policy.requires_human_approval() {
+            let approval = ApprovalRecord::pending(task.id, approval_policy, request.initiator)?;
+            task.request_approval(approval.id)?;
+            Some(approval)
+        } else {
+            task.auto_approve()?;
+            None
+        };
+
+        Ok(PlannedTaskBundle { task, approval })
     }
 }
 
@@ -276,5 +294,44 @@ mod tests {
         assert!(plan.patterns.contains(&AgenticPattern::HumanInTheLoop));
         assert!(plan.patterns.contains(&AgenticPattern::CustomBusinessLogic));
         assert_eq!(plan.approval_policy, ApprovalPolicy::PlantManager);
+    }
+
+    #[test]
+    fn intake_task_auto_approves_low_risk_work() {
+        let orchestrator = WorkOrchestrator::default();
+        let mut request = base_request();
+        request.title = "Summarize shift notes".to_string();
+        request.description = "Summarize shift notes for morning handoff.".to_string();
+        request.priority = TaskPriority::Routine;
+        request.risk = TaskRisk::Low;
+        request.integrations = vec![IntegrationTarget::Mes];
+        request.equipment_ids.clear();
+        request.requires_diagnostic_loop = false;
+
+        let bundle = orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+
+        assert_eq!(bundle.task.status, fa_domain::TaskStatus::Approved);
+        assert!(bundle.approval.is_none());
+    }
+
+    #[test]
+    fn intake_task_creates_manual_approval_for_high_risk_work() {
+        let orchestrator = WorkOrchestrator::default();
+        let mut request = base_request();
+        request.priority = TaskPriority::Critical;
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+
+        let bundle = orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+
+        assert_eq!(bundle.task.status, fa_domain::TaskStatus::AwaitingApproval);
+        assert_eq!(
+            bundle.approval.as_ref().map(|approval| approval.policy),
+            Some(ApprovalPolicy::SafetyOfficer)
+        );
     }
 }

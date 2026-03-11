@@ -8,6 +8,9 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 
 ### Added
 
+- Task and approval lifecycle models with guarded state transitions
+- Initial connector read-only trait and audit sink abstractions
+- M1 execution plan and lifecycle design baseline documents
 - Rust workspace with `fa-domain`, `fa-core`, and `fa-server`
 - Manufacturing-oriented domain model for enterprise, sites, workers, equipment, and task planning
 - Initial orchestration engine that selects agentic patterns based on risk, scope, and approval needs

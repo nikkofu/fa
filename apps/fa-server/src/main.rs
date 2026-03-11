@@ -3,6 +3,7 @@ use std::{env, net::SocketAddr};
 use anyhow::Context;
 use axum::{
     extract::State,
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -34,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/blueprint", get(blueprint))
+        .route("/api/v1/tasks/intake", post(intake_task))
         .route("/api/v1/tasks/plan", post(plan_task))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -66,6 +68,24 @@ async fn plan_task(
     Json(request): Json<TaskRequest>,
 ) -> impl IntoResponse {
     Json(state.orchestrator.plan_task(request))
+}
+
+async fn intake_task(
+    State(state): State<AppState>,
+    Json(request): Json<TaskRequest>,
+) -> Result<Json<fa_domain::PlannedTaskBundle>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .orchestrator
+        .intake_task(request)
+        .map(Json)
+        .map_err(|error| {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": error.to_string(),
+                })),
+            )
+        })
 }
 
 async fn shutdown_signal() {

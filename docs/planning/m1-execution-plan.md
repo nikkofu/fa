@@ -300,3 +300,7 @@
 4. 在 `2026-03-31` 前完成 `v0.2.0` 并发布。
 
 这意味着下一步最合适的实际编码任务，是先实现任务状态机、审批状态机以及 connector / audit trait。
+
+当前设计基线文档：
+
+- [design/m1-lifecycle-and-abstractions.md](/Users/admin/Documents/WORK/ai/fa/docs/design/m1-lifecycle-and-abstractions.md)
