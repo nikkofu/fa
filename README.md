@@ -175,6 +175,22 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
   }' | jq
 ```
 
+驳回后重新发起审批：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/resubmit \
+  -H "x-correlation-id: demo-resubmit-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requested_by": {
+      "id": "worker_1001",
+      "display_name": "Liu Supervisor",
+      "role": "Production Supervisor"
+    },
+    "comment": "Added vibration report and revised action plan"
+  }' | jq
+```
+
 启动执行 stub：
 
 ```bash
@@ -250,6 +266,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - 领域模型与任务规划核心
 - HTTP API 启动骨架
 - 任务生命周期主链：`intake -> get -> approve -> execute -> complete / fail`
+- 修订闭环：`approve(false) -> resubmit -> approve(true)`
 - mock `MES` / mock `CMMS` connector 上下文读取
 - 可替换 `task repository` 抽象与内存实现
 - 内存审计事件流与 `correlation_id` 贯通
@@ -261,7 +278,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 下一步优先级：
 
 1. 引入持久化与审计存储
-2. 扩展审批、修订、失败的异常路径
+2. 扩展更多审批异常、修订元数据与失败路径
 3. 引入持久化 task repository 与 audit store
 4. 冻结首条试运行 workflow 场景与验收标准
 

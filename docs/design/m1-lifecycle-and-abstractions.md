@@ -165,6 +165,7 @@ trait:
   - `POST /api/v1/tasks/intake`
   - `GET /api/v1/tasks/{task_id}`
   - `POST /api/v1/tasks/{task_id}/approve`
+  - `POST /api/v1/tasks/{task_id}/resubmit`
   - `POST /api/v1/tasks/{task_id}/execute`
   - `POST /api/v1/tasks/{task_id}/complete`
   - `POST /api/v1/tasks/{task_id}/fail`
@@ -174,7 +175,7 @@ trait:
 
 基于本设计，下一步实现顺序应为：
 
-1. 扩展审批驳回、修订与异常路径
-2. 为 repository 增加持久化实现候选
+1. 为 repository 增加持久化实现候选
+2. 扩展修订元数据、审批 SLA 与异常路径
 3. 为 connector 和 audit 增加更完整的契约测试
 4. 冻结首条试运行 workflow 规格

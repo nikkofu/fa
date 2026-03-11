@@ -10,7 +10,8 @@ use axum::{
 };
 use fa_core::{
     bootstrap_blueprint, ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest,
-    FailTaskRequest, InMemoryAuditSink, OrchestrationError, TrackedTaskState, WorkOrchestrator,
+    FailTaskRequest, InMemoryAuditSink, OrchestrationError, ResubmitTaskRequest, TrackedTaskState,
+    WorkOrchestrator,
 };
 use fa_domain::TaskRequest;
 use serde_json::json;
@@ -142,6 +143,24 @@ async fn execute_task(
         .map_err(error_response)
 }
 
+async fn resubmit_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ResubmitTaskRequest>,
+) -> Result<Json<TrackedTaskState>, (StatusCode, Json<serde_json::Value>)> {
+    let correlation_id = headers
+        .get("x-correlation-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    state
+        .orchestrator
+        .resubmit_task(task_id, request, correlation_id)
+        .map(Json)
+        .map_err(error_response)
+}
+
 async fn complete_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
@@ -248,6 +267,7 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/tasks/plan", post(plan_task))
         .route("/api/v1/tasks/{task_id}", get(get_task))
         .route("/api/v1/tasks/{task_id}/approve", post(approve_task))
+        .route("/api/v1/tasks/{task_id}/resubmit", post(resubmit_task))
         .route("/api/v1/tasks/{task_id}/execute", post(execute_task))
         .route("/api/v1/tasks/{task_id}/complete", post(complete_task))
         .route("/api/v1/tasks/{task_id}/fail", post(fail_task))
@@ -502,5 +522,128 @@ mod tests {
             fail_json["planned_task"]["task"]["latest_error"],
             "Cooling loop inspection failed"
         );
+    }
+
+    #[tokio::test]
+    async fn rejected_task_can_be_resubmitted_for_approval() {
+        let app = app(build_state());
+
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/tasks/intake")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-intake-003")
+                    .body(Body::from(high_risk_request()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("intake should succeed");
+
+        let reject_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/approve"))
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-reject-001")
+                    .body(Body::from(
+                        r#"{
+                            "decided_by":{"id":"worker_2001","display_name":"Chen QE","role":"Quality Engineer"},
+                            "approved":false,
+                            "comment":"Need additional evidence"
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("rejection should succeed");
+        assert_eq!(reject_response.status(), StatusCode::OK);
+        let reject_json = json_body(reject_response).await;
+        assert_eq!(reject_json["planned_task"]["task"]["status"], "planned");
+        assert_eq!(
+            reject_json["planned_task"]["approval"]["status"],
+            "rejected"
+        );
+
+        let execute_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/execute"))
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-execute-003")
+                    .body(Body::from(
+                        r#"{
+                            "actor":{"id":"worker_3001","display_name":"Wu Maint","role":"Maintenance Technician"},
+                            "note":"Execution should not start"
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("execute response should succeed");
+        assert_eq!(execute_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let execute_json = json_body(execute_response).await;
+        assert_eq!(
+            execute_json["error"],
+            "invalid task transition from Planned to Executing"
+        );
+
+        let resubmit_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/resubmit"))
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-resubmit-001")
+                    .body(Body::from(
+                        r#"{
+                            "requested_by":{"id":"worker_1001","display_name":"Liu Supervisor","role":"Production Supervisor"},
+                            "comment":"Added vibration report and revised action plan"
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("resubmit should succeed");
+        assert_eq!(resubmit_response.status(), StatusCode::OK);
+        let resubmit_json = json_body(resubmit_response).await;
+        assert_eq!(
+            resubmit_json["planned_task"]["task"]["status"],
+            "awaiting_approval"
+        );
+        assert_eq!(
+            resubmit_json["planned_task"]["approval"]["status"],
+            "pending"
+        );
+
+        let approve_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/approve"))
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-approve-003")
+                    .body(Body::from(
+                        r#"{
+                            "decided_by":{"id":"worker_2001","display_name":"Chen QE","role":"Quality Engineer"},
+                            "approved":true,
+                            "comment":"Revision accepted"
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("approval after resubmission should succeed");
+        assert_eq!(approve_response.status(), StatusCode::OK);
+        let approve_json = json_body(approve_response).await;
+        assert_eq!(approve_json["planned_task"]["task"]["status"], "approved");
     }
 }

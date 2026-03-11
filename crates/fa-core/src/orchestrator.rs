@@ -35,6 +35,12 @@ pub struct ApprovalActionRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResubmitTaskRequest {
+    pub requested_by: ActorHandle,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecuteTaskRequest {
     pub actor: ActorHandle,
     pub note: Option<String>,
@@ -305,6 +311,61 @@ impl WorkOrchestrator {
             AuditActor::System("workflow-engine".to_string()),
             format!(
                 "Task transitioned to {:?} after approval decision",
+                updated.planned_task.task.status
+            ),
+        )?;
+
+        Ok(updated)
+    }
+
+    pub fn resubmit_task(
+        &self,
+        task_id: Uuid,
+        action: ResubmitTaskRequest,
+        correlation_id: Option<String>,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let requested_by = action.requested_by.clone();
+        let comment = action.comment.clone();
+        let updated = self.update_task(task_id, correlation_id, |state| {
+            let plan = state
+                .planned_task
+                .task
+                .plan
+                .as_ref()
+                .ok_or(LifecycleError::MissingExecutionPlan)?;
+            let approval =
+                ApprovalRecord::pending(task_id, plan.approval_policy, requested_by.clone())?;
+            state.planned_task.task.request_approval(approval.id)?;
+            state.planned_task.approval = Some(approval);
+            Ok(())
+        })?;
+        let approval = updated
+            .planned_task
+            .approval
+            .as_ref()
+            .ok_or(OrchestrationError::ApprovalNotFound(task_id))?;
+
+        self.record_event(
+            Some(updated.correlation_id.clone()),
+            AuditEventKind::ApprovalRequested,
+            Some(task_id),
+            Some(approval.id),
+            AuditActor::Human(requested_by),
+            comment.unwrap_or_else(|| {
+                format!(
+                    "Task '{}' resubmitted for approval to role '{}'",
+                    updated.planned_task.task.request.title, approval.required_role
+                )
+            }),
+        )?;
+        self.record_event(
+            Some(updated.correlation_id.clone()),
+            AuditEventKind::TaskStatusChanged,
+            Some(task_id),
+            Some(approval.id),
+            AuditActor::System("workflow-engine".to_string()),
+            format!(
+                "Task transitioned to {:?} after resubmission",
                 updated.planned_task.task.status
             ),
         )?;
@@ -691,7 +752,7 @@ mod tests {
     use fa_domain::{ActorHandle, IntegrationTarget};
 
     use super::*;
-    use crate::{InMemoryAuditSink, InMemoryTaskRepository, TaskRepository};
+    use crate::{InMemoryAuditSink, InMemoryTaskRepository, ResubmitTaskRequest, TaskRepository};
 
     fn approver() -> ActorHandle {
         ActorHandle {
@@ -1033,6 +1094,73 @@ mod tests {
             Some("Cooling loop inspection failed")
         );
         assert_eq!(failed.correlation_id, "fail-001");
+    }
+
+    #[test]
+    fn resubmit_task_reopens_rejected_work_for_approval() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+        let rejected = orchestrator
+            .approve_task(
+                task_id,
+                ApprovalActionRequest {
+                    decided_by: approver(),
+                    approved: false,
+                    comment: Some("Need more evidence".to_string()),
+                },
+                Some("approve-reject-001".to_string()),
+            )
+            .expect("rejection should succeed");
+        assert_eq!(
+            rejected.planned_task.task.status,
+            fa_domain::TaskStatus::Planned
+        );
+        assert_eq!(
+            rejected
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.status),
+            Some(fa_domain::ApprovalStatus::Rejected)
+        );
+
+        let resubmitted = orchestrator
+            .resubmit_task(
+                task_id,
+                ResubmitTaskRequest {
+                    requested_by: ActorHandle {
+                        id: "worker_1001".to_string(),
+                        display_name: "Liu Supervisor".to_string(),
+                        role: "Production Supervisor".to_string(),
+                    },
+                    comment: Some("Added vibration report and revised action plan".to_string()),
+                },
+                Some("resubmit-001".to_string()),
+            )
+            .expect("resubmission should succeed");
+
+        assert_eq!(
+            resubmitted.planned_task.task.status,
+            fa_domain::TaskStatus::AwaitingApproval
+        );
+        assert_eq!(
+            resubmitted
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.status),
+            Some(fa_domain::ApprovalStatus::Pending)
+        );
+        assert_eq!(resubmitted.correlation_id, "resubmit-001");
+        assert!(audit_sink.snapshot().expect("audit snapshot").len() >= 9);
     }
 
     #[test]

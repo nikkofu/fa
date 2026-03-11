@@ -17,6 +17,6 @@ pub use connectors::{
 };
 pub use orchestrator::{
     ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
-    OrchestrationError, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
+    OrchestrationError, ResubmitTaskRequest, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };
 pub use repository::{InMemoryTaskRepository, TaskRepository};
