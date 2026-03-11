@@ -21,8 +21,15 @@
 1. `cargo fmt --all`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
-4. 更新 `CHANGELOG.md`
-5. 确认试运行或目标环境的回退方案
+4. `bash scripts/smoke_v0_2_0.sh`
+5. 更新 `CHANGELOG.md`
+6. 确认试运行或目标环境的回退方案
+
+参考清单：
+
+- [docs/qa/v0.2.0-test-checklist.md](/Users/admin/Documents/WORK/ai/fa/docs/qa/v0.2.0-test-checklist.md)
+- [docs/qa/v0.2.0-release-checklist.md](/Users/admin/Documents/WORK/ai/fa/docs/qa/v0.2.0-release-checklist.md)
+- [docs/qa/v0.2.0-manual-validation.md](/Users/admin/Documents/WORK/ai/fa/docs/qa/v0.2.0-manual-validation.md)
 
 ## 4. 发布动作
 

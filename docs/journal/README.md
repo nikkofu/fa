@@ -18,3 +18,4 @@
 - [2026-03-11-sqlite-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-sqlite-stage-notes.md)
 - [2026-03-11-pilot-workflow-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-pilot-workflow-stage-notes.md)
 - [2026-03-12-evidence-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-12-evidence-stage-notes.md)
+- [2026-03-12-release-readiness-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-12-release-readiness-stage-notes.md)

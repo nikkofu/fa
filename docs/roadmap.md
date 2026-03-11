@@ -18,7 +18,7 @@
 
 当前状态：`In Progress`
 
-当前进行中的执行切片：`M1 Evidence Snapshot Baseline`
+当前进行中的执行切片：`M1 Release Readiness Baseline`
 
 已完成的子项：
 
@@ -38,6 +38,7 @@
 - pilot workflow candidate evaluation baseline
 - first pilot workflow specification baseline
 - structured task evidence snapshot baseline
+- v0.2.0 QA and release readiness baseline
 
 计划内容：
 
@@ -60,6 +61,7 @@
 - SQLite 本地数据库可承接任务与审计的耐久存储
 - 首条制造 pilot workflow 已明确业务边界、审批角色、SOP 影响与回退策略
 - 任务证据已经可以作为结构化快照进入 API、持久化和任务级查询
+- `v0.2.0` 已具备测试清单、发布清单和可重复 smoke gate 基线
 
 执行计划：
 

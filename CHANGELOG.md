@@ -24,6 +24,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - SQLite-backed task repository and audit store with `FA_SQLITE_DB_PATH` runtime injection
 - Pilot workflow candidate evaluation and first workflow specification baseline documents
 - Structured task evidence snapshot baseline and task-scoped evidence endpoint for pilot workflow alignment
+- v0.2.0 test checklist, release checklist, and reusable workflow smoke script baseline
 
 ### Changed
 
