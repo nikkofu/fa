@@ -16,3 +16,4 @@
 - [2026-03-11-persistence-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-persistence-stage-notes.md)
 - [2026-03-11-audit-query-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-audit-query-stage-notes.md)
 - [2026-03-11-sqlite-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-sqlite-stage-notes.md)
+- [2026-03-11-pilot-workflow-stage-notes.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/2026-03-11-pilot-workflow-stage-notes.md)

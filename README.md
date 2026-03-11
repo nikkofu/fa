@@ -311,6 +311,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - `FA_DATA_DIR` 驱动的本地文件持久化 task / audit storage
 - 按任务和链路主键查询的审计回放能力
 - `FA_SQLITE_DB_PATH` 驱动的 SQLite task / audit 持久化基线
+- 首条 pilot workflow 候选比较与规格定义基线
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -319,10 +320,10 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 
 下一步优先级：
 
-1. 冻结首条 pilot workflow 候选与试运行边界
-2. 编写 pilot workflow 规格，明确 SOP 影响、审批角色与回退策略
-3. 完成 `v0.2.0` 的测试清单、发布清单与试运行验证记录
-4. 评估 SQLite 向更强数据库后端的迁移路径
+1. 让 pilot workflow 与当前 API、connector、审计模型逐项对齐并补齐缺口
+2. 完成 `v0.2.0` 的测试清单、发布清单与试运行验证记录
+3. 评估 SQLite 向更强数据库后端的迁移路径
+4. 扩展 evidence、审批 SLA 和异常路径表达
 
 ## 团队工作流
 

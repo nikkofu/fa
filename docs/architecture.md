@@ -152,7 +152,8 @@ AI 不能模糊责任边界。每一步工作流都必须能回答：
 当前状态：
 
 - 文档和 CI 基线已建立
-- 持久化与审计存储待实现
+- 内存、文件和 SQLite 三种本地持久化基线已建立
+- 首条 pilot workflow 已完成候选比较与规格定义基线
 
 ## 5. 初始数据流
 
@@ -193,4 +194,4 @@ AI 不能模糊责任边界。每一步工作流都必须能回答：
 - 增加任务状态机与审批状态机
 - 建立审计存储
 - 接入 LLM provider abstraction
-- 为试运行工厂定义具体 pilot workflow
+- 让首条 pilot workflow 与当前 API、connector 和 evidence 边界逐项对齐
