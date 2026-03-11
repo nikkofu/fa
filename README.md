@@ -121,6 +121,7 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
 - [docs/roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md)
 - [docs/release-process.md](/Users/admin/Documents/WORK/ai/fa/docs/release-process.md)
 - [docs/governance/README.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/README.md)
+- [docs/planning/README.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/README.md)
 
 ## 当前状态
 
@@ -147,3 +148,9 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
 - [docs/governance/team-operating-model.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/team-operating-model.md)
 - [docs/governance/delivery-lifecycle.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/delivery-lifecycle.md)
 - [docs/governance/governance-controls.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/governance-controls.md)
+
+## 当前执行计划
+
+当前已经把 `M1` 的执行计划细化到工作包、责任、依赖和验收层，后续实施以此为准：
+
+- [docs/planning/m1-execution-plan.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/m1-execution-plan.md)

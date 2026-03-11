@@ -30,6 +30,10 @@
 - 任务不再只有规划结果，而具备生命周期
 - connector 可替换，不与具体供应商绑定
 
+执行计划：
+
+- [planning/m1-execution-plan.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/m1-execution-plan.md)
+
 ## v0.3.0
 
 目标日期：2026-04-18
