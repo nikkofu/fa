@@ -16,6 +16,19 @@
 
 目标日期：2026-03-31
 
+当前状态：`In Progress`
+
+已完成的子项：
+
+- 任务状态机
+- 审批状态机
+- `connector` trait
+- `audit` trait
+- request / trace correlation id
+- mock `MES` / `CMMS` read-only connector
+- `intake / get / approve / execute / complete / fail` 生命周期主路径
+- 服务层生命周期集成测试
+
 计划内容：
 
 - 任务状态机
@@ -29,6 +42,7 @@
 
 - 任务不再只有规划结果，而具备生命周期
 - connector 可替换，不与具体供应商绑定
+- 生命周期 API 主路径可通过服务层测试验证
 
 执行计划：
 

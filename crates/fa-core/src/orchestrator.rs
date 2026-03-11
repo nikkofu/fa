@@ -42,6 +42,18 @@ pub struct ExecuteTaskRequest {
     pub note: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompleteTaskRequest {
+    pub actor: ActorHandle,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailTaskRequest {
+    pub actor: ActorHandle,
+    pub reason: String,
+}
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum OrchestrationError {
     #[error(transparent)]
@@ -361,6 +373,72 @@ impl WorkOrchestrator {
                     updated.planned_task.task.request.title, updated.planned_task.task.status
                 )
             }),
+        )?;
+
+        Ok(updated)
+    }
+
+    pub fn complete_task(
+        &self,
+        task_id: Uuid,
+        action: CompleteTaskRequest,
+        correlation_id: Option<String>,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let updated = self.task_store.update(task_id, |state| {
+            state.planned_task.task.complete()?;
+            state.correlation_id = correlation_id.clone();
+            Ok(())
+        })?;
+
+        self.record_event(
+            Some(correlation_id),
+            AuditEventKind::TaskStatusChanged,
+            Some(task_id),
+            updated
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.id),
+            AuditActor::Human(action.actor),
+            action.note.unwrap_or_else(|| {
+                format!(
+                    "Task '{}' transitioned to {:?}",
+                    updated.planned_task.task.request.title, updated.planned_task.task.status
+                )
+            }),
+        )?;
+
+        Ok(updated)
+    }
+
+    pub fn fail_task(
+        &self,
+        task_id: Uuid,
+        action: FailTaskRequest,
+        correlation_id: Option<String>,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let updated = self.task_store.update(task_id, |state| {
+            state.planned_task.task.fail(action.reason.clone())?;
+            state.correlation_id = correlation_id.clone();
+            Ok(())
+        })?;
+
+        self.record_event(
+            Some(correlation_id),
+            AuditEventKind::TaskStatusChanged,
+            Some(task_id),
+            updated
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.id),
+            AuditActor::Human(action.actor),
+            format!(
+                "Task '{}' failed: {}",
+                updated.planned_task.task.request.title, action.reason
+            ),
         )?;
 
         Ok(updated)
@@ -864,5 +942,113 @@ mod tests {
         );
         assert_eq!(executing.correlation_id, "execute-001");
         assert!(audit_sink.snapshot().expect("audit snapshot").len() >= 7);
+    }
+
+    #[test]
+    fn complete_task_transitions_executing_work_to_completed() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+        orchestrator
+            .approve_task(
+                task_id,
+                ApprovalActionRequest {
+                    decided_by: approver(),
+                    approved: true,
+                    comment: Some("Proceed to execution".to_string()),
+                },
+                Some("approve-003".to_string()),
+            )
+            .expect("approval should succeed");
+        orchestrator
+            .start_execution(
+                task_id,
+                ExecuteTaskRequest {
+                    actor: executor(),
+                    note: Some("Execution stub started".to_string()),
+                },
+                Some("execute-002".to_string()),
+            )
+            .expect("execution should start");
+
+        let completed = orchestrator
+            .complete_task(
+                task_id,
+                CompleteTaskRequest {
+                    actor: executor(),
+                    note: Some("Execution finished".to_string()),
+                },
+                Some("complete-001".to_string()),
+            )
+            .expect("completion should succeed");
+
+        assert_eq!(
+            completed.planned_task.task.status,
+            fa_domain::TaskStatus::Completed
+        );
+        assert_eq!(completed.correlation_id, "complete-001");
+    }
+
+    #[test]
+    fn fail_task_transitions_work_to_failed() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+        orchestrator
+            .approve_task(
+                task_id,
+                ApprovalActionRequest {
+                    decided_by: approver(),
+                    approved: true,
+                    comment: Some("Proceed to execution".to_string()),
+                },
+                Some("approve-004".to_string()),
+            )
+            .expect("approval should succeed");
+        orchestrator
+            .start_execution(
+                task_id,
+                ExecuteTaskRequest {
+                    actor: executor(),
+                    note: Some("Execution stub started".to_string()),
+                },
+                Some("execute-003".to_string()),
+            )
+            .expect("execution should start");
+
+        let failed = orchestrator
+            .fail_task(
+                task_id,
+                FailTaskRequest {
+                    actor: executor(),
+                    reason: "Cooling loop inspection failed".to_string(),
+                },
+                Some("fail-001".to_string()),
+            )
+            .expect("failure should be recorded");
+
+        assert_eq!(
+            failed.planned_task.task.status,
+            fa_domain::TaskStatus::Failed
+        );
+        assert_eq!(
+            failed.planned_task.task.latest_error.as_deref(),
+            Some("Cooling loop inspection failed")
+        );
+        assert_eq!(failed.correlation_id, "fail-001");
     }
 }

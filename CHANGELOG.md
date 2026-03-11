@@ -15,6 +15,8 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - In-memory audit sink and audit events endpoint
 - Correlation-id aware intake flow with connector context hydration
 - In-memory task store with `get/approve/execute` lifecycle endpoints
+- Task lifecycle `complete / fail` actions
+- Service-level integration tests covering the lifecycle happy path and failure path
 
 ### Changed
 

@@ -15,6 +15,6 @@ pub use connectors::{
     MockMesConnector,
 };
 pub use orchestrator::{
-    ApprovalActionRequest, ExecuteTaskRequest, OrchestrationError, TaskIntakeResult,
-    TrackedTaskState, WorkOrchestrator,
+    ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
+    OrchestrationError, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };

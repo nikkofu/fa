@@ -149,6 +149,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 - `tasks/intake` 现在会返回 `correlation_id`、`planned_task` 和 `context_reads`
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
 - 事件会写入内存审计 sink，可通过 `/api/v1/audit/events` 查看
+- `priority` 当前只接受 `routine / expedited / critical`
+- `risk` 当前只接受 `low / medium / high / critical`
 
 查询已跟踪任务：
 
@@ -189,6 +191,38 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
   }' | jq
 ```
 
+完成任务：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/complete \
+  -H "x-correlation-id: demo-complete-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_3001",
+      "display_name": "Wu Maint",
+      "role": "Maintenance Technician"
+    },
+    "note": "Execution finished"
+  }' | jq
+```
+
+标记任务失败：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/fail \
+  -H "x-correlation-id: demo-fail-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_3001",
+      "display_name": "Wu Maint",
+      "role": "Maintenance Technician"
+    },
+    "reason": "Cooling loop inspection failed"
+  }' | jq
+```
+
 ## 仓库治理
 
 - Git 远端已配置为 `https://github.com/nikkofu/fa.git`
@@ -205,6 +239,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - [docs/release-process.md](/Users/admin/Documents/WORK/ai/fa/docs/release-process.md)
 - [docs/governance/README.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/README.md)
 - [docs/planning/README.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/README.md)
+- [docs/progress/README.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/README.md)
+- [docs/journal/README.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/README.md)
 
 ## 当前状态
 
@@ -213,6 +249,10 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - Rust workspace 初始化
 - 领域模型与任务规划核心
 - HTTP API 启动骨架
+- 任务生命周期主链：`intake -> get -> approve -> execute -> complete / fail`
+- mock `MES` / mock `CMMS` connector 上下文读取
+- 内存审计事件流与 `correlation_id` 贯通
+- 服务层生命周期集成测试
 - 基础测试
 - CI / Release 基线
 - 架构与项目文档基线
