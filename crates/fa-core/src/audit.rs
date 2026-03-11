@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::sqlite_cli::SqliteCliDatabase;
 use fa_domain::ActorHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,6 +196,133 @@ impl AuditSink for FileAuditStore {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SqliteAuditStore {
+    database: SqliteCliDatabase,
+}
+
+impl SqliteAuditStore {
+    pub fn new(db_path: impl Into<PathBuf>) -> Result<Self> {
+        let database = SqliteCliDatabase::new(db_path)?;
+        database.execute(
+            "CREATE TABLE IF NOT EXISTS audit_events (
+                id TEXT PRIMARY KEY,
+                task_id TEXT,
+                approval_id TEXT,
+                correlation_id TEXT,
+                kind TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_events_task_id ON audit_events(task_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_approval_id ON audit_events(approval_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_correlation_id ON audit_events(correlation_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_kind ON audit_events(kind);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at ON audit_events(occurred_at);",
+        )?;
+
+        Ok(Self { database })
+    }
+
+    fn kind_value(kind: &AuditEventKind) -> String {
+        serde_json::to_string(kind)
+            .expect("audit kind should serialize")
+            .trim_matches('"')
+            .to_string()
+    }
+
+    fn load_many(&self, sql: &str) -> Result<Vec<AuditEvent>> {
+        let output = self.database.execute(sql)?;
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        output
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str::<AuditEvent>(line)
+                    .with_context(|| format!("failed to decode sqlite audit event: {line}"))
+            })
+            .collect()
+    }
+}
+
+impl AuditStore for SqliteAuditStore {
+    fn snapshot(&self) -> Result<Vec<AuditEvent>> {
+        self.load_many("SELECT payload_json FROM audit_events ORDER BY occurred_at, id;")
+    }
+
+    fn query(&self, query: &AuditEventQuery) -> Result<Vec<AuditEvent>> {
+        let mut clauses = Vec::new();
+        if let Some(task_id) = query.task_id {
+            clauses.push(format!(
+                "task_id = {}",
+                SqliteCliDatabase::quote(&task_id.to_string())
+            ));
+        }
+        if let Some(approval_id) = query.approval_id {
+            clauses.push(format!(
+                "approval_id = {}",
+                SqliteCliDatabase::quote(&approval_id.to_string())
+            ));
+        }
+        if let Some(correlation_id) = &query.correlation_id {
+            clauses.push(format!(
+                "correlation_id = {}",
+                SqliteCliDatabase::quote(correlation_id)
+            ));
+        }
+        if let Some(kind) = &query.kind {
+            clauses.push(format!(
+                "kind = {}",
+                SqliteCliDatabase::quote(&Self::kind_value(kind))
+            ));
+        }
+
+        let sql = if clauses.is_empty() {
+            "SELECT payload_json FROM audit_events ORDER BY occurred_at, id;".to_string()
+        } else {
+            format!(
+                "SELECT payload_json FROM audit_events WHERE {} ORDER BY occurred_at, id;",
+                clauses.join(" AND ")
+            )
+        };
+        self.load_many(&sql)
+    }
+}
+
+impl AuditSink for SqliteAuditStore {
+    fn record(&self, event: AuditEvent) -> Result<()> {
+        let payload =
+            serde_json::to_string(&event).context("failed to encode sqlite audit event")?;
+        let payload_path = self.database.write_temp_json("audit", &payload)?;
+        let sql = format!(
+            "INSERT INTO audit_events(id, task_id, approval_id, correlation_id, kind, occurred_at, payload_json) VALUES ({id}, {task_id}, {approval_id}, {correlation_id}, {kind}, {occurred_at}, CAST(readfile({payload_path}) AS TEXT));",
+            id = SqliteCliDatabase::quote(&event.id.to_string()),
+            task_id = event
+                .task_id
+                .map(|task_id| SqliteCliDatabase::quote(&task_id.to_string()))
+                .unwrap_or_else(|| "NULL".to_string()),
+            approval_id = event
+                .approval_id
+                .map(|approval_id| SqliteCliDatabase::quote(&approval_id.to_string()))
+                .unwrap_or_else(|| "NULL".to_string()),
+            correlation_id = event
+                .correlation_id
+                .as_ref()
+                .map(|correlation_id| SqliteCliDatabase::quote(correlation_id))
+                .unwrap_or_else(|| "NULL".to_string()),
+            kind = SqliteCliDatabase::quote(&Self::kind_value(&event.kind)),
+            occurred_at = SqliteCliDatabase::quote(&event.occurred_at.to_rfc3339()),
+            payload_path = SqliteCliDatabase::quote(&payload_path.display().to_string()),
+        );
+        let result = self.database.execute(&sql).map(|_| ());
+        let _ = fs::remove_file(payload_path);
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -314,6 +442,41 @@ mod tests {
         let snapshot = reopened.snapshot().expect("snapshot should be readable");
 
         assert_eq!(snapshot, vec![event]);
+        fs::remove_dir_all(dir).expect("temp dir should clean");
+    }
+
+    #[test]
+    fn sqlite_audit_store_persists_and_filters_events() {
+        let dir = temp_dir("fa-sqlite-audit-store-test");
+        let db_path = dir.join("fa.db");
+        let sink = SqliteAuditStore::new(&db_path).expect("sqlite store should create");
+        let task_id = Uuid::new_v4();
+        let event = AuditEvent {
+            id: Uuid::new_v4(),
+            correlation_id: Some("corr-sqlite".to_string()),
+            occurred_at: Utc::now(),
+            kind: AuditEventKind::ApprovalRequested,
+            task_id: Some(task_id),
+            approval_id: None,
+            actor: AuditActor::System("test".to_string()),
+            summary: "sqlite".to_string(),
+        };
+
+        sink.record(event.clone()).expect("event should record");
+
+        let reopened = SqliteAuditStore::new(&db_path).expect("sqlite store should reopen");
+        let snapshot = reopened.snapshot().expect("snapshot should read");
+        assert_eq!(snapshot, vec![event.clone()]);
+
+        let filtered = reopened
+            .query(&AuditEventQuery {
+                correlation_id: Some("corr-sqlite".to_string()),
+                kind: Some(AuditEventKind::ApprovalRequested),
+                ..AuditEventQuery::default()
+            })
+            .expect("query should succeed");
+        assert_eq!(filtered, vec![event]);
+
         fs::remove_dir_all(dir).expect("temp dir should clean");
     }
 }

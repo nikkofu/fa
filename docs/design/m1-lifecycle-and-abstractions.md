@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本设计文档固化 `M1-W01` 到 `M1-W08` 的最小设计结论，为后续编码提供一致边界：
+本设计文档固化 `M1-W01` 到 `M1-W09` 的最小设计结论，为后续编码提供一致边界：
 
 - 任务生命周期模型
 - 审批生命周期模型
@@ -132,6 +132,7 @@ trait:
 - event 必须允许挂靠 `task_id`、`approval_id`、`correlation_id`
 - actor 必须区分 human / agent / system
 - audit 查询必须至少支持 `task_id`、`correlation_id`、`kind` 这些运行主键
+- 当前持久化实现已覆盖 `InMemoryAuditSink`、`FileAuditStore` 和 `SqliteAuditStore`
 
 ## 6. Task Repository 抽象
 
@@ -149,6 +150,7 @@ trait:
 
 - `InMemoryTaskRepository`
 - `FileTaskRepository`
+- `SqliteTaskRepository`
 
 ### 6.3 设计原则
 
@@ -157,7 +159,24 @@ trait:
 - 保持当前生命周期 API 行为不变
 - 为后续持久化、回放和 optimistic locking 留出演进空间
 
-## 7. 当前实现落点
+## 7. 持久化运行时选择
+
+### 7.1 当前运行时顺序
+
+`fa-server` 当前按以下顺序注入持久化后端：
+
+1. `FA_SQLITE_DB_PATH` -> `SqliteTaskRepository` + `SqliteAuditStore`
+2. `FA_DATA_DIR` -> `FileTaskRepository` + `FileAuditStore`
+3. 未设置时 -> `InMemoryTaskRepository` + `InMemoryAuditSink`
+
+### 7.2 设计原则
+
+- API 层和编排器不感知底层存储类型
+- SQLite 基线用于本地结构化耐久存储与重启回读验证
+- 不把当前 SQLite 基线误写成最终企业数据库方案
+- 保持三种模式并存，避免打断当前开发、测试和演示流
+
+## 8. 当前实现落点
 
 - 领域生命周期模型：`crates/fa-domain/src/lifecycle.rs`
 - connector 抽象：`crates/fa-core/src/connectors.rs`
@@ -165,7 +184,8 @@ trait:
 - task repository abstraction：`crates/fa-core/src/repository.rs`
 - 生命周期动作编排：`crates/fa-core/src/orchestrator.rs`
 - mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
-- audit 实现：`InMemoryAuditSink`、`FileAuditStore`
+- audit 实现：`InMemoryAuditSink`、`FileAuditStore`、`SqliteAuditStore`
+- repository 实现：`InMemoryTaskRepository`、`FileTaskRepository`、`SqliteTaskRepository`
 - 生命周期 API：
   - `POST /api/v1/tasks/intake`
   - `GET /api/v1/tasks/{task_id}`
@@ -177,11 +197,11 @@ trait:
   - `POST /api/v1/tasks/{task_id}/fail`
   - `GET /api/v1/audit/events`
 
-## 8. 下一步
+## 9. 下一步
 
 基于本设计，下一步实现顺序应为：
 
-1. 引入审计回放视图和更完整的查询语义
-2. 为 repository 增加数据库级持久化实现候选
-3. 扩展修订元数据、审批 SLA 与异常路径
-4. 冻结首条试运行 workflow 规格
+1. 冻结首条 pilot workflow 候选与边界
+2. 编写 pilot workflow 规格，明确 SOP 影响、审批角色和回退策略
+3. 评估 SQLite 向更强数据库后端的迁移边界
+4. 扩展修订元数据、审批 SLA 与异常路径

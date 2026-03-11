@@ -42,10 +42,28 @@ FA_SERVER_ADDR=127.0.0.1:8010
 
 ## 5. 本地持久化模式
 
-如果需要在本地重启后仍保留任务和审计数据，可设置：
+FA 当前支持三种本地运行模式：
+
+- 内存模式：不设置持久化环境变量
+- 文件模式：设置 `FA_DATA_DIR`
+- SQLite 模式：设置 `FA_SQLITE_DB_PATH`
+
+运行时选择顺序：
+
+1. `FA_SQLITE_DB_PATH`
+2. `FA_DATA_DIR`
+3. 内存模式
+
+文件模式示例：
 
 ```bash
 FA_DATA_DIR=/tmp/fa-data cargo run -p fa-server
+```
+
+SQLite 模式示例：
+
+```bash
+FA_SQLITE_DB_PATH=/tmp/fa-dev/fa.db cargo run -p fa-server
 ```
 
 说明：
@@ -54,6 +72,10 @@ FA_DATA_DIR=/tmp/fa-data cargo run -p fa-server
 - 设置 `FA_DATA_DIR` 后，任务状态会写入 `tasks/*.json`
 - 审计事件会写入 `audit-events.jsonl`
 - 该模式用于本地试运行和验证，不等同于数据库级持久化
+- 设置 `FA_SQLITE_DB_PATH` 后，任务与审计事件会写入同一个 SQLite 数据库文件
+- SQLite 模式当前依赖本机可执行的 `sqlite3` CLI
+- 为避免与其他项目发生数据污染，SQLite 数据文件应使用 FA 独立路径，例如 `/tmp/fa-dev/fa.db`
+- 不要同时让多个无关项目指向同一个 `FA_SQLITE_DB_PATH`
 
 ## 6. 推荐本地检查方式
 

@@ -21,11 +21,13 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Rejected task `resubmit` action with revision-loop service coverage
 - File-backed task repository and audit store with `FA_DATA_DIR` runtime injection
 - Filtered audit queries and task-scoped audit replay endpoints
+- SQLite-backed task repository and audit store with `FA_SQLITE_DB_PATH` runtime injection
 
 ### Changed
 
 - Default local API port changed from `8080` to `8000`
 - Added local development port convention to avoid conflicts with other projects
+- Runtime persistence selection now prefers SQLite, then file-backed storage, then in-memory storage
 - Rust workspace with `fa-domain`, `fa-core`, and `fa-server`
 - Manufacturing-oriented domain model for enterprise, sites, workers, equipment, and task planning
 - Initial orchestration engine that selects agentic patterns based on risk, scope, and approval needs

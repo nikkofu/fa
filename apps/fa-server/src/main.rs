@@ -12,7 +12,7 @@ use fa_core::{
     bootstrap_blueprint, ApprovalActionRequest, AuditEventKind, AuditEventQuery, AuditStore,
     CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest, FileAuditStore, FileTaskRepository,
     InMemoryAuditSink, InMemoryTaskRepository, OrchestrationError, ResubmitTaskRequest,
-    TrackedTaskState, WorkOrchestrator,
+    SqliteAuditStore, SqliteTaskRepository, TrackedTaskState, WorkOrchestrator,
 };
 use fa_domain::TaskRequest;
 use serde::Deserialize;
@@ -299,7 +299,19 @@ fn error_response(error: OrchestrationError) -> (StatusCode, Json<serde_json::Va
 }
 
 fn build_state() -> anyhow::Result<AppState> {
-    if let Some(data_dir) = env::var_os("FA_DATA_DIR") {
+    if let Some(db_path) = env::var_os("FA_SQLITE_DB_PATH") {
+        let db_path = std::path::PathBuf::from(db_path);
+        let audit_sink = Arc::new(SqliteAuditStore::new(&db_path)?);
+        let task_repository = Arc::new(SqliteTaskRepository::new(&db_path)?);
+
+        Ok(AppState {
+            orchestrator: WorkOrchestrator::with_m1_defaults_and_repository(
+                audit_sink.clone(),
+                task_repository,
+            ),
+            audit_sink,
+        })
+    } else if let Some(data_dir) = env::var_os("FA_DATA_DIR") {
         let data_dir = std::path::PathBuf::from(data_dir);
         let audit_sink = Arc::new(FileAuditStore::new(&data_dir)?);
         let task_repository = Arc::new(FileTaskRepository::new(&data_dir)?);

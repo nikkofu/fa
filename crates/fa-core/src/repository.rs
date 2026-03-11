@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use uuid::Uuid;
 
 use crate::orchestrator::{OrchestrationError, TrackedTaskState};
+use crate::sqlite_cli::SqliteCliDatabase;
 
 pub trait TaskRepository: Send + Sync {
     fn create(&self, state: TrackedTaskState) -> std::result::Result<(), OrchestrationError>;
@@ -180,6 +181,130 @@ impl TaskRepository for FileTaskRepository {
     }
 }
 
+#[derive(Clone)]
+pub struct SqliteTaskRepository {
+    database: SqliteCliDatabase,
+}
+
+impl SqliteTaskRepository {
+    pub fn new(db_path: impl Into<PathBuf>) -> Result<Self> {
+        let database = SqliteCliDatabase::new(db_path)?;
+        database.execute(
+            "CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                correlation_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );",
+        )?;
+
+        Ok(Self { database })
+    }
+
+    fn exists(&self, task_id: Uuid) -> std::result::Result<bool, OrchestrationError> {
+        let output = self
+            .database
+            .execute(&format!(
+                "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_id = {});",
+                SqliteCliDatabase::quote(&task_id.to_string())
+            ))
+            .map_err(|error| OrchestrationError::TaskRepository(error.to_string()))?;
+        Ok(output == "1")
+    }
+
+    fn persist_state(
+        &self,
+        state: &TrackedTaskState,
+        is_insert: bool,
+    ) -> std::result::Result<(), OrchestrationError> {
+        let payload = serde_json::to_string(state).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to encode sqlite task state: {error}"
+            ))
+        })?;
+        let payload_path = self
+            .database
+            .write_temp_json("task", &payload)
+            .map_err(|error| OrchestrationError::TaskRepository(error.to_string()))?;
+        let task_id = state.planned_task.task.id.to_string();
+        let correlation_id = &state.correlation_id;
+        let updated_at = state.planned_task.task.updated_at.to_rfc3339();
+        let sql = if is_insert {
+            format!(
+                "INSERT INTO tasks(task_id, correlation_id, updated_at, payload_json) VALUES ({task_id}, {correlation_id}, {updated_at}, CAST(readfile({payload_path}) AS TEXT));",
+                task_id = SqliteCliDatabase::quote(&task_id),
+                correlation_id = SqliteCliDatabase::quote(correlation_id),
+                updated_at = SqliteCliDatabase::quote(&updated_at),
+                payload_path = SqliteCliDatabase::quote(&payload_path.display().to_string()),
+            )
+        } else {
+            format!(
+                "UPDATE tasks SET correlation_id = {correlation_id}, updated_at = {updated_at}, payload_json = CAST(readfile({payload_path}) AS TEXT) WHERE task_id = {task_id};",
+                task_id = SqliteCliDatabase::quote(&task_id),
+                correlation_id = SqliteCliDatabase::quote(correlation_id),
+                updated_at = SqliteCliDatabase::quote(&updated_at),
+                payload_path = SqliteCliDatabase::quote(&payload_path.display().to_string()),
+            )
+        };
+
+        let result = self
+            .database
+            .execute(&sql)
+            .map(|_| ())
+            .map_err(|error| OrchestrationError::TaskRepository(error.to_string()));
+        let _ = fs::remove_file(payload_path);
+        result
+    }
+}
+
+impl TaskRepository for SqliteTaskRepository {
+    fn create(&self, state: TrackedTaskState) -> std::result::Result<(), OrchestrationError> {
+        if self.exists(state.planned_task.task.id)? {
+            return Err(OrchestrationError::TaskAlreadyExists(
+                state.planned_task.task.id,
+            ));
+        }
+
+        self.persist_state(&state, true)
+    }
+
+    fn get(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<Option<TrackedTaskState>, OrchestrationError> {
+        let output = self
+            .database
+            .execute(&format!(
+                "SELECT payload_json FROM tasks WHERE task_id = {};",
+                SqliteCliDatabase::quote(&task_id.to_string())
+            ))
+            .map_err(|error| OrchestrationError::TaskRepository(error.to_string()))?;
+
+        if output.is_empty() {
+            return Ok(None);
+        }
+
+        serde_json::from_str(&output).map(Some).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to decode sqlite task state for {task_id}: {error}"
+            ))
+        })
+    }
+
+    fn save(
+        &self,
+        state: TrackedTaskState,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let task_id = state.planned_task.task.id;
+        if !self.exists(task_id)? {
+            return Err(OrchestrationError::TaskNotFound(task_id));
+        }
+
+        self.persist_state(&state, false)?;
+        Ok(state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -296,6 +421,30 @@ mod tests {
             .expect("create should succeed");
 
         let reopened = FileTaskRepository::new(&dir).expect("file repository should reopen");
+        let stored = reopened
+            .get(task_id)
+            .expect("get should succeed")
+            .expect("task should exist");
+
+        assert_eq!(stored, state);
+        fs::remove_dir_all(dir).expect("temp dir should clean");
+    }
+
+    #[test]
+    fn sqlite_repository_persists_tracked_state_across_instances() {
+        let dir = temp_dir("fa-sqlite-task-repository-test");
+        let db_path = dir.join("fa.db");
+        let repository =
+            SqliteTaskRepository::new(&db_path).expect("sqlite repository should create");
+        let task_id = Uuid::new_v4();
+        let state = tracked_state(task_id);
+
+        repository
+            .create(state.clone())
+            .expect("create should succeed");
+
+        let reopened =
+            SqliteTaskRepository::new(&db_path).expect("sqlite repository should reopen");
         let stored = reopened
             .get(task_id)
             .expect("get should succeed")

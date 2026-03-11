@@ -18,7 +18,7 @@
 
 当前状态：`In Progress`
 
-当前进行中的执行切片：`M1-W08 Audit Replay Query`
+当前进行中的执行切片：`M1-W09 SQLite Baseline`
 
 已完成的子项：
 
@@ -34,6 +34,7 @@
 - rejected task resubmission loop
 - local persistence baseline for task and audit storage
 - audit replay and filtered audit query baseline
+- sqlite-backed local persistence baseline
 
 计划内容：
 
@@ -53,6 +54,7 @@
 - rejected work 可重新发起审批而不必重建任务
 - 本地文件持久化可支撑重启后的任务与审计回读
 - 审计事件可按任务、相关链路和事件类型回放与过滤
+- SQLite 本地数据库可承接任务与审计的耐久存储
 
 执行计划：
 

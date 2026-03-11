@@ -3,10 +3,11 @@ mod blueprint;
 mod connectors;
 mod orchestrator;
 mod repository;
+mod sqlite_cli;
 
 pub use audit::{
     AuditActor, AuditEvent, AuditEventKind, AuditEventQuery, AuditSink, AuditStore, FileAuditStore,
-    InMemoryAuditSink, NoopAuditSink,
+    InMemoryAuditSink, NoopAuditSink, SqliteAuditStore,
 };
 pub use blueprint::{
     bootstrap_blueprint, DeliveryTrack, PatternDecision, PlatformBlueprint, SystemLayer,
@@ -20,4 +21,6 @@ pub use orchestrator::{
     ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
     OrchestrationError, ResubmitTaskRequest, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };
-pub use repository::{FileTaskRepository, InMemoryTaskRepository, TaskRepository};
+pub use repository::{
+    FileTaskRepository, InMemoryTaskRepository, SqliteTaskRepository, TaskRepository,
+};
