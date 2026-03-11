@@ -16,13 +16,17 @@ use crate::connectors::{
     ConnectorReadRequest, ConnectorReadResult, ConnectorRecordKind, ConnectorRegistry,
     ConnectorSubject,
 };
+use crate::evidence::{evidence_from_context_reads, TaskEvidence};
 use crate::repository::{InMemoryTaskRepository, TaskRepository};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrackedTaskState {
     pub correlation_id: String,
     pub planned_task: PlannedTaskBundle,
+    #[serde(default)]
     pub context_reads: Vec<ConnectorReadResult>,
+    #[serde(default)]
+    pub evidence: Vec<TaskEvidence>,
 }
 
 pub type TaskIntakeResult = TrackedTaskState;
@@ -155,6 +159,13 @@ impl WorkOrchestrator {
             .ok_or(OrchestrationError::TaskNotFound(task_id))
     }
 
+    pub fn get_task_evidence(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<Vec<TaskEvidence>, OrchestrationError> {
+        Ok(self.get_task(task_id)?.evidence)
+    }
+
     pub fn plan_task(&self, request: TaskRequest) -> ExecutionPlan {
         let patterns = select_patterns(&request);
         let approval_policy = select_approval_policy(&request);
@@ -185,6 +196,7 @@ impl WorkOrchestrator {
     ) -> std::result::Result<TaskIntakeResult, OrchestrationError> {
         let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let context_reads = self.hydrate_context(&request, &correlation_id)?;
+        let evidence = evidence_from_context_reads(&context_reads);
         let plan = self.plan_task(request.clone());
         let approval_policy = plan.approval_policy;
         let mut task = TaskRecord::draft(request.clone());
@@ -249,6 +261,7 @@ impl WorkOrchestrator {
             correlation_id,
             planned_task: PlannedTaskBundle { task, approval },
             context_reads,
+            evidence,
         };
         self.task_repository.create(tracked_state.clone())?;
 
@@ -851,6 +864,7 @@ mod tests {
         );
         assert!(intake_result.planned_task.approval.is_none());
         assert_eq!(intake_result.context_reads.len(), 1);
+        assert_eq!(intake_result.evidence.len(), 2);
         assert!(!audit_sink
             .snapshot()
             .expect("snapshot should work")
@@ -883,7 +897,33 @@ mod tests {
             Some(ApprovalPolicy::SafetyOfficer)
         );
         assert_eq!(intake_result.context_reads.len(), 2);
+        assert_eq!(intake_result.evidence.len(), 4);
         assert!(audit_sink.snapshot().expect("snapshot should work").len() >= 4);
+    }
+
+    #[test]
+    fn get_task_evidence_returns_structured_snapshots() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink);
+        let request = base_request();
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+
+        let evidence = orchestrator
+            .get_task_evidence(task_id)
+            .expect("evidence lookup should succeed");
+
+        assert_eq!(evidence.len(), 4);
+        assert!(evidence
+            .iter()
+            .any(|item| item.summary.contains("telemetry")));
+        assert!(evidence
+            .iter()
+            .any(|item| item.summary.contains("recommended_action")
+                || item.summary.contains("recommends")));
     }
 
     #[test]

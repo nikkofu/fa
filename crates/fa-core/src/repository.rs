@@ -373,6 +373,7 @@ mod tests {
                 approval: None,
             },
             context_reads: Vec::new(),
+            evidence: Vec::new(),
         }
     }
 

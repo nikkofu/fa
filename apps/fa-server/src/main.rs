@@ -155,6 +155,17 @@ async fn get_task(
         .map_err(error_response)
 }
 
+async fn task_evidence(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<Vec<fa_core::TaskEvidence>>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .orchestrator
+        .get_task_evidence(task_id)
+        .map(Json)
+        .map_err(error_response)
+}
+
 async fn approve_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
@@ -344,6 +355,7 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/tasks/intake", post(intake_task))
         .route("/api/v1/tasks/plan", post(plan_task))
         .route("/api/v1/tasks/{task_id}", get(get_task))
+        .route("/api/v1/tasks/{task_id}/evidence", get(task_evidence))
         .route(
             "/api/v1/tasks/{task_id}/audit-events",
             get(task_audit_events),
@@ -422,6 +434,13 @@ mod tests {
             intake_json["planned_task"]["task"]["status"],
             "awaiting_approval"
         );
+        assert_eq!(
+            intake_json["evidence"]
+                .as_array()
+                .expect("evidence list")
+                .len(),
+            4
+        );
 
         let get_response = app
             .clone()
@@ -437,6 +456,32 @@ mod tests {
         assert_eq!(get_response.status(), StatusCode::OK);
         let get_json = json_body(get_response).await;
         assert_eq!(get_json["planned_task"]["task"]["id"], TASK_ID);
+        assert_eq!(
+            get_json["evidence"]
+                .as_array()
+                .expect("evidence list")
+                .len(),
+            4
+        );
+
+        let evidence_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/evidence"))
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should succeed");
+        assert_eq!(evidence_response.status(), StatusCode::OK);
+        let evidence_json = json_body(evidence_response).await;
+        let evidence_items = evidence_json.as_array().expect("evidence list");
+        assert_eq!(evidence_items.len(), 4);
+        assert!(evidence_items
+            .iter()
+            .any(|item| item["summary"].as_str().unwrap_or("").contains("telemetry")));
 
         let approve_response = app
             .clone()

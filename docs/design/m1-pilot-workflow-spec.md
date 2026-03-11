@@ -135,6 +135,12 @@ workflow 的输出应包括：
 - mock `CMMS`
 - 人工补充说明
 
+当前阶段证据输出方式：
+
+- `POST /api/v1/tasks/intake` 返回 `evidence`
+- `GET /api/v1/tasks/{task_id}` 返回 `evidence`
+- `GET /api/v1/tasks/{task_id}/evidence` 返回任务级 evidence 快照列表
+
 ## 10. 明确禁止的动作
 
 当前阶段明确不允许：
@@ -159,6 +165,8 @@ workflow 的输出应包括：
 
 - 任务 intake
 - 任务查询
+- 任务级 evidence snapshot
+- 任务级 evidence 查询接口
 - 审批
 - 修订重提
 - 执行开始
@@ -168,7 +176,6 @@ workflow 的输出应包括：
 
 当前尚未支持但后续需要补齐：
 
-- evidence 对象的独立结构化模型
 - workflow 级可视化视图
 - 与真实 CMMS 的受控写入草稿接口
 - 角色责任矩阵的更强策略表达

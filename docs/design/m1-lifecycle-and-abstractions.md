@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本设计文档固化 `M1-W01` 到 `M1-W09` 的最小设计结论，为后续编码提供一致边界：
+本设计文档固化当前 `M1` 阶段的最小设计结论，为后续编码提供一致边界：
 
 - 任务生命周期模型
 - 审批生命周期模型
@@ -10,6 +10,7 @@
 - audit event 最小模型
 - task repository abstraction
 - audit replay query baseline
+- task evidence snapshot baseline
 
 ## 2. 任务生命周期
 
@@ -159,7 +160,25 @@ trait:
 - 保持当前生命周期 API 行为不变
 - 为后续持久化、回放和 optimistic locking 留出演进空间
 
-## 7. 持久化运行时选择
+## 7. Task Evidence Snapshot
+
+### 7.1 目标
+
+把 connector 的原始读取结果进一步沉淀为任务级 evidence 快照，使“证据清单”成为任务正式输出的一部分，而不是只存在于底层上下文读取里。
+
+### 7.2 核心类型
+
+- `TaskEvidence`
+- `TrackedTaskState.evidence`
+
+### 7.3 设计原则
+
+- evidence 先作为轻量 snapshot 存在，不单独引入复杂存储层
+- evidence 必须可序列化、可持久化、可通过任务接口回读
+- evidence 要保留来源、记录类型、摘要和原始 payload
+- evidence 由 connector read 结果生成，但不等同于简单复制原始读取对象
+
+## 8. 持久化运行时选择
 
 ### 7.1 当前运行时顺序
 
@@ -176,19 +195,22 @@ trait:
 - 不把当前 SQLite 基线误写成最终企业数据库方案
 - 保持三种模式并存，避免打断当前开发、测试和演示流
 
-## 8. 当前实现落点
+## 9. 当前实现落点
 
 - 领域生命周期模型：`crates/fa-domain/src/lifecycle.rs`
 - connector 抽象：`crates/fa-core/src/connectors.rs`
 - audit 抽象：`crates/fa-core/src/audit.rs`
+- evidence 抽象：`crates/fa-core/src/evidence.rs`
 - task repository abstraction：`crates/fa-core/src/repository.rs`
 - 生命周期动作编排：`crates/fa-core/src/orchestrator.rs`
 - mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
 - audit 实现：`InMemoryAuditSink`、`FileAuditStore`、`SqliteAuditStore`
 - repository 实现：`InMemoryTaskRepository`、`FileTaskRepository`、`SqliteTaskRepository`
+- task state 输出：`correlation_id`、`planned_task`、`context_reads`、`evidence`
 - 生命周期 API：
   - `POST /api/v1/tasks/intake`
   - `GET /api/v1/tasks/{task_id}`
+  - `GET /api/v1/tasks/{task_id}/evidence`
   - `GET /api/v1/tasks/{task_id}/audit-events`
   - `POST /api/v1/tasks/{task_id}/approve`
   - `POST /api/v1/tasks/{task_id}/resubmit`
@@ -197,11 +219,11 @@ trait:
   - `POST /api/v1/tasks/{task_id}/fail`
   - `GET /api/v1/audit/events`
 
-## 9. 下一步
+## 10. 下一步
 
 基于本设计，下一步实现顺序应为：
 
-1. 冻结首条 pilot workflow 候选与边界
-2. 编写 pilot workflow 规格，明确 SOP 影响、审批角色和回退策略
+1. 完成 `v0.2.0` 的测试清单、发布清单与手工验证证据
+2. 为 pilot workflow 增加更明确的角色责任矩阵和审批策略表达
 3. 评估 SQLite 向更强数据库后端的迁移边界
-4. 扩展修订元数据、审批 SLA 与异常路径
+4. 扩展 evidence、审批 SLA 与异常路径

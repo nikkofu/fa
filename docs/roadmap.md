@@ -18,7 +18,7 @@
 
 当前状态：`In Progress`
 
-当前进行中的执行切片：`M1-W10 Pilot Workflow Definition`
+当前进行中的执行切片：`M1 Evidence Snapshot Baseline`
 
 已完成的子项：
 
@@ -37,6 +37,7 @@
 - sqlite-backed local persistence baseline
 - pilot workflow candidate evaluation baseline
 - first pilot workflow specification baseline
+- structured task evidence snapshot baseline
 
 计划内容：
 
@@ -58,6 +59,7 @@
 - 审计事件可按任务、相关链路和事件类型回放与过滤
 - SQLite 本地数据库可承接任务与审计的耐久存储
 - 首条制造 pilot workflow 已明确业务边界、审批角色、SOP 影响与回退策略
+- 任务证据已经可以作为结构化快照进入 API、持久化和任务级查询
 
 执行计划：
 

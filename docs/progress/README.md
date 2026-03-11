@@ -32,3 +32,4 @@
 - [2026-03-11-m1-audit-query-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-audit-query-stage-kickoff.md)
 - [2026-03-11-m1-sqlite-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-sqlite-stage-kickoff.md)
 - [2026-03-11-m1-pilot-workflow-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-pilot-workflow-stage-kickoff.md)
+- [2026-03-12-m1-evidence-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-12-m1-evidence-stage-kickoff.md)

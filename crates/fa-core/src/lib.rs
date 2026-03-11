@@ -1,6 +1,7 @@
 mod audit;
 mod blueprint;
 mod connectors;
+mod evidence;
 mod orchestrator;
 mod repository;
 mod sqlite_cli;
@@ -17,6 +18,7 @@ pub use connectors::{
     ConnectorRecord, ConnectorRecordKind, ConnectorRegistry, ConnectorSubject, MockCmmsConnector,
     MockMesConnector,
 };
+pub use evidence::TaskEvidence;
 pub use orchestrator::{
     ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
     OrchestrationError, ResubmitTaskRequest, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,

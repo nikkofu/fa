@@ -23,6 +23,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Filtered audit queries and task-scoped audit replay endpoints
 - SQLite-backed task repository and audit store with `FA_SQLITE_DB_PATH` runtime injection
 - Pilot workflow candidate evaluation and first workflow specification baseline documents
+- Structured task evidence snapshot baseline and task-scoped evidence endpoint for pilot workflow alignment
 
 ### Changed
 

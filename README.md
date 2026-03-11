@@ -131,6 +131,12 @@ curl -sS 'http://127.0.0.1:8000/api/v1/audit/events?correlation_id=demo-approve-
 curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/audit-events | jq
 ```
 
+查看单个任务的结构化 evidence 快照：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/evidence | jq
+```
+
 提交任务规划请求：
 
 ```bash
@@ -184,9 +190,11 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 
 说明：
 
-- `tasks/intake` 现在会返回 `correlation_id`、`planned_task` 和 `context_reads`
+- `tasks/intake` 现在会返回 `correlation_id`、`planned_task`、`context_reads` 和 `evidence`
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
+- `evidence` 是从 connector 读取结果提炼出的结构化任务证据快照
 - 审计事件可通过 `/api/v1/audit/events` 查看，也支持 `task_id / correlation_id / kind / approval_id` 过滤
+- 单任务 evidence 可通过 `/api/v1/tasks/{task_id}/evidence` 查看
 - 单任务审计回放可通过 `/api/v1/tasks/{task_id}/audit-events` 查看
 - `priority` 当前只接受 `routine / expedited / critical`
 - `risk` 当前只接受 `low / medium / high / critical`
@@ -312,6 +320,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - 按任务和链路主键查询的审计回放能力
 - `FA_SQLITE_DB_PATH` 驱动的 SQLite task / audit 持久化基线
 - 首条 pilot workflow 候选比较与规格定义基线
+- 结构化 task evidence snapshot 与任务级 evidence 查询接口
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -320,8 +329,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 
 下一步优先级：
 
-1. 让 pilot workflow 与当前 API、connector、审计模型逐项对齐并补齐缺口
-2. 完成 `v0.2.0` 的测试清单、发布清单与试运行验证记录
+1. 完成 `v0.2.0` 的测试清单、发布清单与试运行验证记录
+2. 为 pilot workflow 增加更明确的角色责任矩阵与审批策略表达
 3. 评估 SQLite 向更强数据库后端的迁移路径
 4. 扩展 evidence、审批 SLA 和异常路径表达
 
