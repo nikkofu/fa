@@ -1,8 +1,11 @@
 use std::{
     collections::HashMap,
+    fs,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
+use anyhow::{Context, Result};
 use uuid::Uuid;
 
 use crate::orchestrator::{OrchestrationError, TrackedTaskState};
@@ -72,8 +75,115 @@ impl TaskRepository for InMemoryTaskRepository {
     }
 }
 
+#[derive(Clone)]
+pub struct FileTaskRepository {
+    tasks_dir: PathBuf,
+    write_lock: Arc<Mutex<()>>,
+}
+
+impl FileTaskRepository {
+    pub fn new(data_dir: impl Into<PathBuf>) -> Result<Self> {
+        let tasks_dir = data_dir.into().join("tasks");
+        fs::create_dir_all(&tasks_dir).with_context(|| {
+            format!(
+                "failed to create task repository directory: {}",
+                tasks_dir.display()
+            )
+        })?;
+
+        Ok(Self {
+            tasks_dir,
+            write_lock: Arc::new(Mutex::new(())),
+        })
+    }
+
+    fn task_path(&self, task_id: Uuid) -> PathBuf {
+        self.tasks_dir.join(format!("{task_id}.json"))
+    }
+
+    fn write_state(&self, state: &TrackedTaskState) -> std::result::Result<(), OrchestrationError> {
+        let task_id = state.planned_task.task.id;
+        let path = self.task_path(task_id);
+        let temp_path = self.tasks_dir.join(format!("{task_id}.tmp"));
+        let encoded = serde_json::to_vec_pretty(state).map_err(|error| {
+            OrchestrationError::TaskRepository(format!("failed to encode task state: {error}"))
+        })?;
+        fs::write(&temp_path, encoded).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to write temp task state file {}: {error}",
+                temp_path.display()
+            ))
+        })?;
+        fs::rename(&temp_path, &path).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to move temp task state into place {}: {error}",
+                path.display()
+            ))
+        })
+    }
+}
+
+impl TaskRepository for FileTaskRepository {
+    fn create(&self, state: TrackedTaskState) -> std::result::Result<(), OrchestrationError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            OrchestrationError::TaskRepository("file repository lock poisoned".to_string())
+        })?;
+        let path = self.task_path(state.planned_task.task.id);
+        if path.exists() {
+            return Err(OrchestrationError::TaskAlreadyExists(
+                state.planned_task.task.id,
+            ));
+        }
+
+        self.write_state(&state)
+    }
+
+    fn get(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<Option<TrackedTaskState>, OrchestrationError> {
+        let path = self.task_path(task_id);
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let bytes = fs::read(&path).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to read task state file {}: {error}",
+                path.display()
+            ))
+        })?;
+        let state = serde_json::from_slice(&bytes).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to decode task state file {}: {error}",
+                path.display()
+            ))
+        })?;
+        Ok(Some(state))
+    }
+
+    fn save(
+        &self,
+        state: TrackedTaskState,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            OrchestrationError::TaskRepository("file repository lock poisoned".to_string())
+        })?;
+        let task_id = state.planned_task.task.id;
+        let path = self.task_path(task_id);
+        if !path.exists() {
+            return Err(OrchestrationError::TaskNotFound(task_id));
+        }
+
+        self.write_state(&state)?;
+        Ok(state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use chrono::Utc;
     use fa_domain::{
         ActorHandle, AgenticPattern, ApprovalPolicy, ExecutionPlan, PlanOwner, PlannedStep,
@@ -82,6 +192,12 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("{prefix}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&path).expect("temp dir should create");
+        path
+    }
 
     fn base_request() -> TaskRequest {
         TaskRequest {
@@ -166,5 +282,26 @@ mod tests {
         let saved = repository.save(state).expect("save should succeed");
 
         assert_eq!(saved.correlation_id, "repo-002");
+    }
+
+    #[test]
+    fn file_repository_persists_tracked_state_across_instances() {
+        let dir = temp_dir("fa-task-repository-test");
+        let repository = FileTaskRepository::new(&dir).expect("file repository should create");
+        let task_id = Uuid::new_v4();
+        let state = tracked_state(task_id);
+
+        repository
+            .create(state.clone())
+            .expect("create should succeed");
+
+        let reopened = FileTaskRepository::new(&dir).expect("file repository should reopen");
+        let stored = reopened
+            .get(task_id)
+            .expect("get should succeed")
+            .expect("task should exist");
+
+        assert_eq!(stored, state);
+        fs::remove_dir_all(dir).expect("temp dir should clean");
     }
 }

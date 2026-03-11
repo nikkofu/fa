@@ -9,8 +9,9 @@ use axum::{
     Json, Router,
 };
 use fa_core::{
-    bootstrap_blueprint, ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest,
-    FailTaskRequest, InMemoryAuditSink, OrchestrationError, ResubmitTaskRequest, TrackedTaskState,
+    bootstrap_blueprint, ApprovalActionRequest, AuditStore, CompleteTaskRequest,
+    ExecuteTaskRequest, FailTaskRequest, FileAuditStore, FileTaskRepository, InMemoryAuditSink,
+    InMemoryTaskRepository, OrchestrationError, ResubmitTaskRequest, TrackedTaskState,
     WorkOrchestrator,
 };
 use fa_domain::TaskRequest;
@@ -23,7 +24,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 struct AppState {
     orchestrator: WorkOrchestrator,
-    audit_sink: Arc<InMemoryAuditSink>,
+    audit_sink: Arc<dyn AuditStore>,
 }
 
 #[tokio::main]
@@ -35,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid FA_SERVER_ADDR: {address}"))?;
 
-    let app = app(build_state());
+    let app = app(build_state()?);
 
     let listener = tokio::net::TcpListener::bind(socket_addr).await?;
     tracing::info!(%socket_addr, "fa-server listening");
@@ -250,11 +251,29 @@ fn error_response(error: OrchestrationError) -> (StatusCode, Json<serde_json::Va
     )
 }
 
-fn build_state() -> AppState {
-    let audit_sink = Arc::new(InMemoryAuditSink::default());
-    AppState {
-        orchestrator: WorkOrchestrator::with_m1_defaults(audit_sink.clone()),
-        audit_sink,
+fn build_state() -> anyhow::Result<AppState> {
+    if let Some(data_dir) = env::var_os("FA_DATA_DIR") {
+        let data_dir = std::path::PathBuf::from(data_dir);
+        let audit_sink = Arc::new(FileAuditStore::new(&data_dir)?);
+        let task_repository = Arc::new(FileTaskRepository::new(&data_dir)?);
+
+        Ok(AppState {
+            orchestrator: WorkOrchestrator::with_m1_defaults_and_repository(
+                audit_sink.clone(),
+                task_repository,
+            ),
+            audit_sink,
+        })
+    } else {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+
+        Ok(AppState {
+            orchestrator: WorkOrchestrator::with_m1_defaults_and_repository(
+                audit_sink.clone(),
+                Arc::new(InMemoryTaskRepository::default()),
+            ),
+            audit_sink,
+        })
     }
 }
 
@@ -319,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn lifecycle_happy_path_works_end_to_end() {
-        let app = app(build_state());
+        let app = app(build_state().expect("state should build"));
 
         let intake_response = app
             .clone()
@@ -441,7 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn fail_endpoint_marks_task_failed() {
-        let app = app(build_state());
+        let app = app(build_state().expect("state should build"));
 
         let _ = app
             .clone()
@@ -526,7 +545,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_task_can_be_resubmitted_for_approval() {
-        let app = app(build_state());
+        let app = app(build_state().expect("state should build"));
 
         let _ = app
             .clone()

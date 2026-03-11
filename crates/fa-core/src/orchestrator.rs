@@ -10,7 +10,7 @@ use fa_domain::{
     PlanOwner, PlannedStep, PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
 };
 
-use crate::audit::{AuditActor, AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
+use crate::audit::{AuditActor, AuditEvent, AuditEventKind, AuditStore, InMemoryAuditSink};
 use crate::blueprint::{bootstrap_blueprint, PlatformBlueprint};
 use crate::connectors::{
     ConnectorReadRequest, ConnectorReadResult, ConnectorRecordKind, ConnectorRegistry,
@@ -80,7 +80,7 @@ pub enum OrchestrationError {
 pub struct WorkOrchestrator {
     blueprint: PlatformBlueprint,
     connectors: ConnectorRegistry,
-    audit_sink: Arc<InMemoryAuditSink>,
+    audit_sink: Arc<dyn AuditStore>,
     task_repository: Arc<dyn TaskRepository>,
 }
 
@@ -113,7 +113,7 @@ impl WorkOrchestrator {
     }
 
     pub fn with_m1_defaults_and_repository(
-        audit_sink: Arc<InMemoryAuditSink>,
+        audit_sink: Arc<dyn AuditStore>,
         task_repository: Arc<dyn TaskRepository>,
     ) -> Self {
         Self::with_dependencies(
@@ -127,7 +127,7 @@ impl WorkOrchestrator {
     pub fn with_dependencies(
         blueprint: PlatformBlueprint,
         connectors: ConnectorRegistry,
-        audit_sink: Arc<InMemoryAuditSink>,
+        audit_sink: Arc<dyn AuditStore>,
         task_repository: Arc<dyn TaskRepository>,
     ) -> Self {
         Self {
@@ -142,7 +142,7 @@ impl WorkOrchestrator {
         &self.blueprint
     }
 
-    pub fn audit_sink(&self) -> &Arc<InMemoryAuditSink> {
+    pub fn audit_sink(&self) -> &Arc<dyn AuditStore> {
         &self.audit_sink
     }
 

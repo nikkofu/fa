@@ -144,6 +144,7 @@ trait:
 当前实现：
 
 - `InMemoryTaskRepository`
+- `FileTaskRepository`
 
 ### 6.3 设计原则
 
@@ -160,7 +161,7 @@ trait:
 - task repository abstraction：`crates/fa-core/src/repository.rs`
 - 生命周期动作编排：`crates/fa-core/src/orchestrator.rs`
 - mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
-- audit 实现：`InMemoryAuditSink`
+- audit 实现：`InMemoryAuditSink`、`FileAuditStore`
 - 生命周期 API：
   - `POST /api/v1/tasks/intake`
   - `GET /api/v1/tasks/{task_id}`

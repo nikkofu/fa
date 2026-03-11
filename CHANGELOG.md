@@ -19,6 +19,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Service-level integration tests covering the lifecycle happy path and failure path
 - `TaskRepository` abstraction with injectable in-memory repository implementation
 - Rejected task `resubmit` action with revision-loop service coverage
+- File-backed task repository and audit store with `FA_DATA_DIR` runtime injection
 
 ### Changed
 

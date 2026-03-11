@@ -18,7 +18,7 @@
 
 当前状态：`In Progress`
 
-当前进行中的执行切片：`M1-W06 Revision Resubmission Loop`
+当前进行中的执行切片：`M1-W07 Local Persistence Baseline`
 
 已完成的子项：
 
@@ -32,6 +32,7 @@
 - 服务层生命周期集成测试
 - task repository abstraction
 - rejected task resubmission loop
+- local persistence baseline for task and audit storage
 
 计划内容：
 
@@ -49,6 +50,7 @@
 - 生命周期 API 主路径可通过服务层测试验证
 - task state storage 可通过 repository abstraction 替换而不改 API 主路径
 - rejected work 可重新发起审批而不必重建任务
+- 本地文件持久化可支撑重启后的任务与审计回读
 
 执行计划：
 

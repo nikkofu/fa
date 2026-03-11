@@ -5,7 +5,8 @@ mod orchestrator;
 mod repository;
 
 pub use audit::{
-    AuditActor, AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink, NoopAuditSink,
+    AuditActor, AuditEvent, AuditEventKind, AuditSink, AuditStore, FileAuditStore,
+    InMemoryAuditSink, NoopAuditSink,
 };
 pub use blueprint::{
     bootstrap_blueprint, DeliveryTrack, PatternDecision, PlatformBlueprint, SystemLayer,
@@ -19,4 +20,4 @@ pub use orchestrator::{
     ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
     OrchestrationError, ResubmitTaskRequest, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };
-pub use repository::{InMemoryTaskRepository, TaskRepository};
+pub use repository::{FileTaskRepository, InMemoryTaskRepository, TaskRepository};

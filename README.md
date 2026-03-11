@@ -61,6 +61,12 @@ make run
 cargo run -p fa-server
 ```
 
+启用本地持久化模式：
+
+```bash
+FA_DATA_DIR=/tmp/fa-data cargo run -p fa-server
+```
+
 默认监听：
 
 ```text
@@ -72,6 +78,7 @@ FA_SERVER_ADDR=0.0.0.0:8000
 - `FA` 默认占用 `8000`
 - 如本机已有其他项目使用 `8000`，通过 `FA_SERVER_ADDR` 覆盖，不要直接改代码默认值
 - 端口分配与冲突规避说明见 [docs/development/local-environment.md](/Users/admin/Documents/WORK/ai/fa/docs/development/local-environment.md)
+- 如需在本地保留任务与审计历史，通过 `FA_DATA_DIR` 启用文件型持久化模式
 
 ## API 起步接口
 
@@ -269,6 +276,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - 修订闭环：`approve(false) -> resubmit -> approve(true)`
 - mock `MES` / mock `CMMS` connector 上下文读取
 - 可替换 `task repository` 抽象与内存实现
+- `FA_DATA_DIR` 驱动的本地文件持久化 task / audit storage
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -277,9 +285,9 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 
 下一步优先级：
 
-1. 引入持久化与审计存储
+1. 演进 SQLite / Postgres 持久化实现
 2. 扩展更多审批异常、修订元数据与失败路径
-3. 引入持久化 task repository 与 audit store
+3. 引入审计回放视图与运行态查询能力
 4. 冻结首条试运行 workflow 场景与验收标准
 
 ## 团队工作流
