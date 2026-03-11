@@ -133,14 +133,21 @@ trait:
 - 领域生命周期模型：`crates/fa-domain/src/lifecycle.rs`
 - connector 抽象：`crates/fa-core/src/connectors.rs`
 - audit 抽象：`crates/fa-core/src/audit.rs`
+- 内存任务存储与动作编排：`crates/fa-core/src/orchestrator.rs`
 - mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
 - audit 实现：`InMemoryAuditSink`
+- 生命周期 API：
+  - `POST /api/v1/tasks/intake`
+  - `GET /api/v1/tasks/{task_id}`
+  - `POST /api/v1/tasks/{task_id}/approve`
+  - `POST /api/v1/tasks/{task_id}/execute`
+  - `GET /api/v1/audit/events`
 
 ## 7. 下一步
 
 基于本设计，下一步实现顺序应为：
 
-1. 让 API 层透传 `correlation_id`
-2. 扩展审批聚合 API
-3. 增加任务读取、审批动作与执行 stub endpoint
-4. 为 connector 和 audit 加上更完整的集成测试
+1. 增加任务完成、失败和回退动作
+2. 为 API 层补完整集成测试
+3. 将 in-memory task store 演进为可替换 repository
+4. 为 connector 和 audit 增加更完整的契约测试

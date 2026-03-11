@@ -2,18 +2,22 @@ use std::{env, net::SocketAddr};
 
 use anyhow::Context;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use fa_core::{bootstrap_blueprint, InMemoryAuditSink, WorkOrchestrator};
+use fa_core::{
+    bootstrap_blueprint, ApprovalActionRequest, ExecuteTaskRequest, InMemoryAuditSink,
+    OrchestrationError, TrackedTaskState, WorkOrchestrator,
+};
 use fa_domain::TaskRequest;
 use serde_json::json;
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
 
 #[derive(Clone)]
 struct AppState {
@@ -42,6 +46,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/audit/events", get(audit_events))
         .route("/api/v1/tasks/intake", post(intake_task))
         .route("/api/v1/tasks/plan", post(plan_task))
+        .route("/api/v1/tasks/{task_id}", get(get_task))
+        .route("/api/v1/tasks/{task_id}/approve", post(approve_task))
+        .route("/api/v1/tasks/{task_id}/execute", post(execute_task))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -89,19 +96,7 @@ async fn intake_task(
         .orchestrator
         .intake_task_with_correlation(request, correlation_id)
         .map(Json)
-        .map_err(|error| {
-            let status = if error.downcast_ref::<fa_domain::LifecycleError>().is_some() {
-                StatusCode::UNPROCESSABLE_ENTITY
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            (
-                status,
-                Json(json!({
-                    "error": error.to_string(),
-                })),
-            )
-        })
+        .map_err(error_response)
 }
 
 async fn audit_events(
@@ -115,6 +110,53 @@ async fn audit_events(
             })),
         )
     })
+}
+
+async fn get_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<TrackedTaskState>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .orchestrator
+        .get_task(task_id)
+        .map(Json)
+        .map_err(error_response)
+}
+
+async fn approve_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ApprovalActionRequest>,
+) -> Result<Json<TrackedTaskState>, (StatusCode, Json<serde_json::Value>)> {
+    let correlation_id = headers
+        .get("x-correlation-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    state
+        .orchestrator
+        .approve_task(task_id, request, correlation_id)
+        .map(Json)
+        .map_err(error_response)
+}
+
+async fn execute_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ExecuteTaskRequest>,
+) -> Result<Json<TrackedTaskState>, (StatusCode, Json<serde_json::Value>)> {
+    let correlation_id = headers
+        .get("x-correlation-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    state
+        .orchestrator
+        .start_execution(task_id, request, correlation_id)
+        .map(Json)
+        .map_err(error_response)
 }
 
 async fn shutdown_signal() {
@@ -148,4 +190,24 @@ fn init_tracing() {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+}
+
+fn error_response(error: OrchestrationError) -> (StatusCode, Json<serde_json::Value>) {
+    let status = match &error {
+        OrchestrationError::Lifecycle(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        OrchestrationError::TaskAlreadyExists(_) => StatusCode::CONFLICT,
+        OrchestrationError::TaskNotFound(_) | OrchestrationError::ApprovalNotFound(_) => {
+            StatusCode::NOT_FOUND
+        }
+        OrchestrationError::TaskStorePoisoned
+        | OrchestrationError::Connector(_)
+        | OrchestrationError::Audit(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    (
+        status,
+        Json(json!({
+            "error": error.to_string(),
+        })),
+    )
 }

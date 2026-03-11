@@ -212,6 +212,7 @@ dependencies = [
  "chrono",
  "fa-domain",
  "serde",
+ "thiserror",
  "uuid",
 ]
 
@@ -239,6 +240,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

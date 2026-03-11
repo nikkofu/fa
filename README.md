@@ -150,6 +150,45 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
 - 事件会写入内存审计 sink，可通过 `/api/v1/audit/events` 查看
 
+查询已跟踪任务：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0 | jq
+```
+
+批准待审批任务：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/approve \
+  -H "x-correlation-id: demo-approve-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decided_by": {
+      "id": "worker_2001",
+      "display_name": "Chen QE",
+      "role": "Quality Engineer"
+    },
+    "approved": true,
+    "comment": "Proceed to execution"
+  }' | jq
+```
+
+启动执行 stub：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/execute \
+  -H "x-correlation-id: demo-execute-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_3001",
+      "display_name": "Wu Maint",
+      "role": "Maintenance Technician"
+    },
+    "note": "Execution stub started"
+  }' | jq
+```
+
 ## 仓库治理
 
 - Git 远端已配置为 `https://github.com/nikkofu/fa.git`

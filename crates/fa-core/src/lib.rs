@@ -14,4 +14,7 @@ pub use connectors::{
     ConnectorRecord, ConnectorRecordKind, ConnectorRegistry, ConnectorSubject, MockCmmsConnector,
     MockMesConnector,
 };
-pub use orchestrator::{TaskIntakeResult, WorkOrchestrator};
+pub use orchestrator::{
+    ApprovalActionRequest, ExecuteTaskRequest, OrchestrationError, TaskIntakeResult,
+    TrackedTaskState, WorkOrchestrator,
+};

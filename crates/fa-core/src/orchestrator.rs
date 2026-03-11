@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use fa_domain::{
-    AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, PlanOwner, PlannedStep,
-    PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
+    ActorHandle, AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, LifecycleError,
+    PlanOwner, PlannedStep, PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
 };
 
 use crate::audit::{AuditActor, AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
@@ -18,10 +21,96 @@ use crate::connectors::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskIntakeResult {
+pub struct TrackedTaskState {
     pub correlation_id: String,
     pub planned_task: PlannedTaskBundle,
     pub context_reads: Vec<ConnectorReadResult>,
+}
+
+pub type TaskIntakeResult = TrackedTaskState;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalActionRequest {
+    pub decided_by: ActorHandle,
+    pub approved: bool,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecuteTaskRequest {
+    pub actor: ActorHandle,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum OrchestrationError {
+    #[error(transparent)]
+    Lifecycle(#[from] LifecycleError),
+    #[error("task {0} already exists")]
+    TaskAlreadyExists(Uuid),
+    #[error("task {0} not found")]
+    TaskNotFound(Uuid),
+    #[error("approval record not found for task {0}")]
+    ApprovalNotFound(Uuid),
+    #[error("task store lock poisoned")]
+    TaskStorePoisoned,
+    #[error("connector error: {0}")]
+    Connector(String),
+    #[error("audit sink error: {0}")]
+    Audit(String),
+}
+
+#[derive(Clone, Default)]
+struct TaskStore {
+    tasks: Arc<Mutex<HashMap<Uuid, TrackedTaskState>>>,
+}
+
+impl TaskStore {
+    fn insert(&self, state: TrackedTaskState) -> std::result::Result<(), OrchestrationError> {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .map_err(|_| OrchestrationError::TaskStorePoisoned)?;
+
+        if tasks.contains_key(&state.planned_task.task.id) {
+            return Err(OrchestrationError::TaskAlreadyExists(
+                state.planned_task.task.id,
+            ));
+        }
+
+        tasks.insert(state.planned_task.task.id, state);
+        Ok(())
+    }
+
+    fn get(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<Option<TrackedTaskState>, OrchestrationError> {
+        self.tasks
+            .lock()
+            .map_err(|_| OrchestrationError::TaskStorePoisoned)
+            .map(|tasks| tasks.get(&task_id).cloned())
+    }
+
+    fn update<F>(
+        &self,
+        task_id: Uuid,
+        mutate: F,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError>
+    where
+        F: FnOnce(&mut TrackedTaskState) -> std::result::Result<(), OrchestrationError>,
+    {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .map_err(|_| OrchestrationError::TaskStorePoisoned)?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(OrchestrationError::TaskNotFound(task_id))?;
+
+        mutate(state)?;
+        Ok(state.clone())
+    }
 }
 
 #[derive(Clone)]
@@ -29,6 +118,7 @@ pub struct WorkOrchestrator {
     blueprint: PlatformBlueprint,
     connectors: ConnectorRegistry,
     audit_sink: Arc<InMemoryAuditSink>,
+    task_store: TaskStore,
 }
 
 impl Default for WorkOrchestrator {
@@ -38,6 +128,7 @@ impl Default for WorkOrchestrator {
             blueprint: bootstrap_blueprint(),
             connectors: ConnectorRegistry::with_m1_defaults(),
             audit_sink,
+            task_store: TaskStore::default(),
         }
     }
 }
@@ -49,6 +140,7 @@ impl WorkOrchestrator {
             blueprint,
             connectors: ConnectorRegistry::with_m1_defaults(),
             audit_sink,
+            task_store: TaskStore::default(),
         }
     }
 
@@ -57,6 +149,7 @@ impl WorkOrchestrator {
             blueprint: bootstrap_blueprint(),
             connectors: ConnectorRegistry::with_m1_defaults(),
             audit_sink,
+            task_store: TaskStore::default(),
         }
     }
 
@@ -66,6 +159,15 @@ impl WorkOrchestrator {
 
     pub fn audit_sink(&self) -> &Arc<InMemoryAuditSink> {
         &self.audit_sink
+    }
+
+    pub fn get_task(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        self.task_store
+            .get(task_id)?
+            .ok_or(OrchestrationError::TaskNotFound(task_id))
     }
 
     pub fn plan_task(&self, request: TaskRequest) -> ExecutionPlan {
@@ -84,7 +186,10 @@ impl WorkOrchestrator {
         }
     }
 
-    pub fn intake_task(&self, request: TaskRequest) -> Result<TaskIntakeResult> {
+    pub fn intake_task(
+        &self,
+        request: TaskRequest,
+    ) -> std::result::Result<TaskIntakeResult, OrchestrationError> {
         self.intake_task_with_correlation(request, None)
     }
 
@@ -92,7 +197,7 @@ impl WorkOrchestrator {
         &self,
         request: TaskRequest,
         correlation_id: Option<String>,
-    ) -> Result<TaskIntakeResult> {
+    ) -> std::result::Result<TaskIntakeResult, OrchestrationError> {
         let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let context_reads = self.hydrate_context(&request, &correlation_id)?;
         let plan = self.plan_task(request.clone());
@@ -155,18 +260,117 @@ impl WorkOrchestrator {
             None
         };
 
-        Ok(TaskIntakeResult {
+        let tracked_state = TrackedTaskState {
             correlation_id,
             planned_task: PlannedTaskBundle { task, approval },
             context_reads,
-        })
+        };
+        self.task_store.insert(tracked_state.clone())?;
+
+        Ok(tracked_state)
+    }
+
+    pub fn approve_task(
+        &self,
+        task_id: Uuid,
+        action: ApprovalActionRequest,
+        correlation_id: Option<String>,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let updated = self.task_store.update(task_id, |state| {
+            let approval = state
+                .planned_task
+                .approval
+                .as_mut()
+                .ok_or(OrchestrationError::ApprovalNotFound(task_id))?;
+
+            if action.approved {
+                approval.approve(action.decided_by.clone(), action.comment.clone())?;
+                state.planned_task.task.approve()?;
+            } else {
+                approval.reject(action.decided_by.clone(), action.comment.clone())?;
+                state.planned_task.task.return_for_revision()?;
+            }
+
+            state.correlation_id = correlation_id.clone();
+            Ok(())
+        })?;
+        let approval = updated
+            .planned_task
+            .approval
+            .as_ref()
+            .ok_or(OrchestrationError::ApprovalNotFound(task_id))?;
+        let decision_event_kind = if action.approved {
+            AuditEventKind::ApprovalApproved
+        } else {
+            AuditEventKind::ApprovalRejected
+        };
+
+        self.record_event(
+            Some(correlation_id.clone()),
+            decision_event_kind,
+            Some(task_id),
+            Some(approval.id),
+            AuditActor::Human(action.decided_by.clone()),
+            format!(
+                "Approval decision for task '{}' is {:?}",
+                updated.planned_task.task.request.title, approval.status
+            ),
+        )?;
+        self.record_event(
+            Some(correlation_id),
+            AuditEventKind::TaskStatusChanged,
+            Some(task_id),
+            Some(approval.id),
+            AuditActor::System("workflow-engine".to_string()),
+            format!(
+                "Task transitioned to {:?} after approval decision",
+                updated.planned_task.task.status
+            ),
+        )?;
+
+        Ok(updated)
+    }
+
+    pub fn start_execution(
+        &self,
+        task_id: Uuid,
+        action: ExecuteTaskRequest,
+        correlation_id: Option<String>,
+    ) -> std::result::Result<TrackedTaskState, OrchestrationError> {
+        let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let updated = self.task_store.update(task_id, |state| {
+            state.planned_task.task.start_execution()?;
+            state.correlation_id = correlation_id.clone();
+            Ok(())
+        })?;
+
+        self.record_event(
+            Some(correlation_id),
+            AuditEventKind::TaskStatusChanged,
+            Some(task_id),
+            updated
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.id),
+            AuditActor::Human(action.actor),
+            action.note.unwrap_or_else(|| {
+                format!(
+                    "Task '{}' transitioned to {:?}",
+                    updated.planned_task.task.request.title, updated.planned_task.task.status
+                )
+            }),
+        )?;
+
+        Ok(updated)
     }
 
     fn hydrate_context(
         &self,
         request: &TaskRequest,
         correlation_id: &str,
-    ) -> Result<Vec<ConnectorReadResult>> {
+    ) -> std::result::Result<Vec<ConnectorReadResult>, OrchestrationError> {
         let mut results = Vec::new();
         let subject = primary_subject(request);
 
@@ -183,7 +387,9 @@ impl WorkOrchestrator {
                 subject: subject.clone(),
                 requested_records: requested_record_kinds(target),
             };
-            let result = connector.read(&read_request)?;
+            let result = connector
+                .read(&read_request)
+                .map_err(|error| OrchestrationError::Connector(error.to_string()))?;
             self.record_event(
                 Some(correlation_id.to_string()),
                 AuditEventKind::ConnectorRead,
@@ -210,17 +416,19 @@ impl WorkOrchestrator {
         approval_id: Option<Uuid>,
         actor: AuditActor,
         summary: String,
-    ) -> Result<()> {
-        self.audit_sink.record(AuditEvent {
-            id: Uuid::new_v4(),
-            correlation_id,
-            occurred_at: Utc::now(),
-            kind,
-            task_id,
-            approval_id,
-            actor,
-            summary,
-        })
+    ) -> std::result::Result<(), OrchestrationError> {
+        self.audit_sink
+            .record(AuditEvent {
+                id: Uuid::new_v4(),
+                correlation_id,
+                occurred_at: Utc::now(),
+                kind,
+                task_id,
+                approval_id,
+                actor,
+                summary,
+            })
+            .map_err(|error| OrchestrationError::Audit(error.to_string()))
     }
 }
 
@@ -424,6 +632,22 @@ mod tests {
     use super::*;
     use crate::InMemoryAuditSink;
 
+    fn approver() -> ActorHandle {
+        ActorHandle {
+            id: "worker_2001".to_string(),
+            display_name: "Chen QE".to_string(),
+            role: "Quality Engineer".to_string(),
+        }
+    }
+
+    fn executor() -> ActorHandle {
+        ActorHandle {
+            id: "worker_3001".to_string(),
+            display_name: "Wu Maint".to_string(),
+            role: "Maintenance Technician".to_string(),
+        }
+    }
+
     fn base_request() -> TaskRequest {
         TaskRequest {
             id: Uuid::new_v4(),
@@ -538,5 +762,107 @@ mod tests {
         );
         assert_eq!(intake_result.context_reads.len(), 2);
         assert!(audit_sink.snapshot().expect("snapshot should work").len() >= 4);
+    }
+
+    #[test]
+    fn get_task_returns_stored_state_after_intake() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink);
+        let request = base_request();
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should persist task");
+        let stored = orchestrator.get_task(task_id).expect("task should exist");
+
+        assert_eq!(stored.planned_task.task.id, task_id);
+        assert_eq!(
+            stored.planned_task.task.status,
+            fa_domain::TaskStatus::Approved
+        );
+    }
+
+    #[test]
+    fn approve_task_transitions_to_approved() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+        let updated = orchestrator
+            .approve_task(
+                task_id,
+                ApprovalActionRequest {
+                    decided_by: approver(),
+                    approved: true,
+                    comment: Some("Proceed to execution".to_string()),
+                },
+                Some("approve-001".to_string()),
+            )
+            .expect("approval should succeed");
+
+        assert_eq!(
+            updated.planned_task.task.status,
+            fa_domain::TaskStatus::Approved
+        );
+        assert_eq!(
+            updated
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.status),
+            Some(fa_domain::ApprovalStatus::Approved)
+        );
+        assert_eq!(updated.correlation_id, "approve-001");
+        assert!(audit_sink.snapshot().expect("audit snapshot").len() >= 6);
+    }
+
+    #[test]
+    fn execute_task_transitions_approved_work_to_executing() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+        orchestrator
+            .approve_task(
+                task_id,
+                ApprovalActionRequest {
+                    decided_by: approver(),
+                    approved: true,
+                    comment: Some("Proceed to execution".to_string()),
+                },
+                Some("approve-002".to_string()),
+            )
+            .expect("approval should succeed");
+
+        let executing = orchestrator
+            .start_execution(
+                task_id,
+                ExecuteTaskRequest {
+                    actor: executor(),
+                    note: Some("Execution stub started".to_string()),
+                },
+                Some("execute-001".to_string()),
+            )
+            .expect("execution should start");
+
+        assert_eq!(
+            executing.planned_task.task.status,
+            fa_domain::TaskStatus::Executing
+        );
+        assert_eq!(executing.correlation_id, "execute-001");
+        assert!(audit_sink.snapshot().expect("audit snapshot").len() >= 7);
     }
 }

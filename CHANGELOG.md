@@ -14,6 +14,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Mock `MES` and mock `CMMS` read-only connector implementations
 - In-memory audit sink and audit events endpoint
 - Correlation-id aware intake flow with connector context hydration
+- In-memory task store with `get/approve/execute` lifecycle endpoints
 
 ### Changed
 
