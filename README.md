@@ -120,6 +120,7 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
 - [docs/project-charter.md](/Users/admin/Documents/WORK/ai/fa/docs/project-charter.md)
 - [docs/roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md)
 - [docs/release-process.md](/Users/admin/Documents/WORK/ai/fa/docs/release-process.md)
+- [docs/governance/README.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/README.md)
 
 ## 当前状态
 
@@ -138,3 +139,11 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
 2. 定义 connector trait，接入 ERP / MES / CMMS 只读链路
 3. 建立审批流、执行流与回滚策略
 4. 建立试运行场景与验收标准
+
+## 团队工作流
+
+项目团队的标准工作流程已经固化在仓库中，后续需求、设计、开发、测试、发布和试运行都按这些文档执行：
+
+- [docs/governance/team-operating-model.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/team-operating-model.md)
+- [docs/governance/delivery-lifecycle.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/delivery-lifecycle.md)
+- [docs/governance/governance-controls.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/governance-controls.md)

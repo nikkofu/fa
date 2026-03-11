@@ -140,3 +140,12 @@ FA Manufacturing Agentic Platform
 - 每周交付一次仓库可运行版本
 - 每个里程碑输出文档、代码、测试与风险更新
 - 所有重要变化必须进入 changelog 和 release note
+
+## 11. 团队工作流基线
+
+项目团队的详细工作流、角色协作方式、RACI、生命周期、变更与风险控制机制，统一定义在：
+
+- [governance/README.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/README.md)
+- [governance/team-operating-model.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/team-operating-model.md)
+- [governance/delivery-lifecycle.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/delivery-lifecycle.md)
+- [governance/governance-controls.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/governance-controls.md)
