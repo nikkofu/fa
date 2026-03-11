@@ -312,7 +312,7 @@ mod tests {
     use chrono::Utc;
     use fa_domain::{
         ActorHandle, AgenticPattern, ApprovalPolicy, ExecutionPlan, PlanOwner, PlannedStep,
-        PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
+        PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk, WorkflowGovernance,
     };
     use uuid::Uuid;
 
@@ -356,6 +356,7 @@ mod tests {
             patterns: vec![AgenticPattern::Coordinator],
             rationale: vec!["test".to_string()],
             approval_policy: ApprovalPolicy::SafetyOfficer,
+            governance: WorkflowGovernance::default(),
             steps: vec![PlannedStep {
                 sequence: 1,
                 label: "Test".to_string(),

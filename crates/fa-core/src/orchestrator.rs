@@ -6,8 +6,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use fa_domain::{
-    ActorHandle, AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, LifecycleError,
-    PlanOwner, PlannedStep, PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
+    ActorHandle, AgenticPattern, ApprovalPolicy, ApprovalRecord, ApprovalStrategy, ExecutionPlan,
+    GovernanceParticipation, LifecycleError, PlanOwner, PlannedStep, PlannedTaskBundle,
+    ResponsibilityAssignment, TaskPriority, TaskRecord, TaskRequest, TaskRisk, WorkflowGovernance,
 };
 
 use crate::audit::{AuditActor, AuditEvent, AuditEventKind, AuditStore, InMemoryAuditSink};
@@ -166,9 +167,24 @@ impl WorkOrchestrator {
         Ok(self.get_task(task_id)?.evidence)
     }
 
+    pub fn get_task_governance(
+        &self,
+        task_id: Uuid,
+    ) -> std::result::Result<WorkflowGovernance, OrchestrationError> {
+        self.get_task(task_id)?
+            .planned_task
+            .task
+            .plan
+            .map(|plan| plan.governance)
+            .ok_or(OrchestrationError::Lifecycle(
+                LifecycleError::MissingExecutionPlan,
+            ))
+    }
+
     pub fn plan_task(&self, request: TaskRequest) -> ExecutionPlan {
         let patterns = select_patterns(&request);
         let approval_policy = select_approval_policy(&request);
+        let governance = build_governance(&request, approval_policy);
         let steps = build_steps(&request, &patterns, approval_policy);
         let rationale = build_rationale(&request, &patterns, approval_policy);
 
@@ -177,6 +193,7 @@ impl WorkOrchestrator {
             patterns,
             rationale,
             approval_policy,
+            governance,
             steps,
             created_at: Utc::now(),
         }
@@ -756,6 +773,144 @@ fn build_rationale(
     rationale
 }
 
+fn build_governance(request: &TaskRequest, approval_policy: ApprovalPolicy) -> WorkflowGovernance {
+    let mut responsibility_matrix = vec![
+        ResponsibilityAssignment {
+            role: normalize_role_label(&request.initiator.role),
+            participation: GovernanceParticipation::Responsible,
+            responsibilities: vec![
+                "raise the anomaly and describe business impact".to_string(),
+                "request revision or resubmission when more evidence is needed".to_string(),
+            ],
+        },
+        ResponsibilityAssignment {
+            role: "fa_orchestrator".to_string(),
+            participation: GovernanceParticipation::Responsible,
+            responsibilities: vec![
+                "assemble cross-system evidence and workflow plan".to_string(),
+                "record task state, approvals, and audit trail".to_string(),
+            ],
+        },
+    ];
+
+    if !request.equipment_ids.is_empty() {
+        responsibility_matrix.push(ResponsibilityAssignment {
+            role: "maintenance_engineer".to_string(),
+            participation: GovernanceParticipation::Responsible,
+            responsibilities: vec![
+                "review diagnostic evidence and recommend maintenance action".to_string(),
+                "lead execution once approval is granted".to_string(),
+            ],
+        });
+    }
+
+    if matches!(request.risk, TaskRisk::High | TaskRisk::Critical)
+        || request
+            .integrations
+            .iter()
+            .any(|target| matches!(target, fa_domain::IntegrationTarget::Quality))
+    {
+        responsibility_matrix.push(ResponsibilityAssignment {
+            role: "quality_engineer".to_string(),
+            participation: GovernanceParticipation::Consulted,
+            responsibilities: vec![
+                "review potential quality impact before execution".to_string(),
+                "advise on containment or escalation when product risk is present".to_string(),
+            ],
+        });
+    }
+
+    responsibility_matrix.push(ResponsibilityAssignment {
+        role: approval_policy.required_role().to_string(),
+        participation: if approval_policy.requires_human_approval() {
+            GovernanceParticipation::Accountable
+        } else {
+            GovernanceParticipation::Informed
+        },
+        responsibilities: if approval_policy.requires_human_approval() {
+            vec!["approve, reject, or request revision before execution".to_string()]
+        } else {
+            vec!["monitor auto-approved execution path".to_string()]
+        },
+    });
+
+    WorkflowGovernance {
+        responsibility_matrix,
+        approval_strategy: ApprovalStrategy {
+            policy: approval_policy,
+            manual_approval_required: approval_policy.requires_human_approval(),
+            required_role: approval_policy.required_role().to_string(),
+            escalation_role: approval_policy.escalation_role().map(str::to_string),
+            decision_scope: approval_decision_scope(request, approval_policy),
+            rationale: approval_rationale(request, approval_policy),
+        },
+        fallback_actions: vec![
+            "record the blocking condition and preserve evidence for audit".to_string(),
+            "return the workflow to a named human owner for next action".to_string(),
+            "create a follow-up task instead of bypassing approval or policy gates".to_string(),
+        ],
+    }
+}
+
+fn approval_decision_scope(request: &TaskRequest, approval_policy: ApprovalPolicy) -> Vec<String> {
+    if !approval_policy.requires_human_approval() {
+        return vec!["allow the task to proceed without manual approval".to_string()];
+    }
+
+    let mut scope = vec![
+        "approve or reject execution before maintenance action begins".to_string(),
+        "decide whether the evidence package is sufficient for the current workflow step"
+            .to_string(),
+    ];
+
+    if !request.equipment_ids.is_empty() {
+        scope.push(
+            "confirm that equipment-affecting work stays inside policy boundaries".to_string(),
+        );
+    }
+
+    if matches!(request.risk, TaskRisk::Critical) {
+        scope.push(
+            "escalate to plant-level governance if local approval is insufficient".to_string(),
+        );
+    }
+
+    scope
+}
+
+fn approval_rationale(request: &TaskRequest, approval_policy: ApprovalPolicy) -> String {
+    if !approval_policy.requires_human_approval() {
+        return format!(
+            "Task is {:?} risk and can proceed with automated approval under the current guardrails.",
+            request.risk
+        );
+    }
+
+    format!(
+        "Manual approval by '{}' is required because the task is {:?} risk, {:?} priority, and may affect equipment, workflow continuity, or downstream quality decisions.",
+        approval_policy.required_role(),
+        request.risk,
+        request.priority
+    )
+}
+
+fn normalize_role_label(role: &str) -> String {
+    let mut normalized = String::new();
+    let mut last_was_separator = false;
+
+    for ch in role.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator && !normalized.is_empty() {
+            normalized.push('_');
+            last_was_separator = true;
+        }
+    }
+
+    normalized.trim_matches('_').to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -822,6 +977,8 @@ mod tests {
         assert!(plan.patterns.contains(&AgenticPattern::SingleAgent));
         assert!(!plan.patterns.contains(&AgenticPattern::HumanInTheLoop));
         assert_eq!(plan.approval_policy, ApprovalPolicy::Auto);
+        assert!(!plan.governance.approval_strategy.manual_approval_required);
+        assert_eq!(plan.governance.approval_strategy.required_role, "system");
     }
 
     #[test]
@@ -839,6 +996,16 @@ mod tests {
         assert!(plan.patterns.contains(&AgenticPattern::HumanInTheLoop));
         assert!(plan.patterns.contains(&AgenticPattern::CustomBusinessLogic));
         assert_eq!(plan.approval_policy, ApprovalPolicy::PlantManager);
+        assert_eq!(
+            plan.governance.approval_strategy.required_role,
+            "plant_manager"
+        );
+        assert!(plan
+            .governance
+            .responsibility_matrix
+            .iter()
+            .any(|assignment| assignment.role == "plant_manager"
+                && assignment.participation == GovernanceParticipation::Accountable));
     }
 
     #[test]
@@ -924,6 +1091,37 @@ mod tests {
             .iter()
             .any(|item| item.summary.contains("recommended_action")
                 || item.summary.contains("recommends")));
+    }
+
+    #[test]
+    fn get_task_governance_returns_matrix_and_strategy() {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink);
+        let mut request = base_request();
+        request.risk = TaskRisk::High;
+        request.requires_human_approval = true;
+        let task_id = request.id;
+
+        orchestrator
+            .intake_task(request)
+            .expect("intake should succeed");
+
+        let governance = orchestrator
+            .get_task_governance(task_id)
+            .expect("governance lookup should succeed");
+
+        assert_eq!(governance.approval_strategy.required_role, "safety_officer");
+        assert!(governance.approval_strategy.manual_approval_required);
+        assert!(governance
+            .responsibility_matrix
+            .iter()
+            .any(|assignment| assignment.role == "maintenance_engineer"
+                && assignment.participation == GovernanceParticipation::Responsible));
+        assert!(governance
+            .responsibility_matrix
+            .iter()
+            .any(|assignment| assignment.role == "quality_engineer"
+                && assignment.participation == GovernanceParticipation::Consulted));
     }
 
     #[test]

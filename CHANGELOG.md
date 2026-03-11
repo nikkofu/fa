@@ -25,6 +25,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Pilot workflow candidate evaluation and first workflow specification baseline documents
 - Structured task evidence snapshot baseline and task-scoped evidence endpoint for pilot workflow alignment
 - v0.2.0 test checklist, release checklist, and reusable workflow smoke script baseline
+- Workflow responsibility matrix and approval strategy baseline with task-scoped governance endpoint
 
 ### Changed
 

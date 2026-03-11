@@ -12,6 +12,7 @@ pub use topology::{
     Organization, Worker,
 };
 pub use workflow::{
-    ActorHandle, ApprovalPolicy, ExecutionPlan, IntegrationTarget, PlanOwner, PlannedStep,
-    TaskPriority, TaskRequest, TaskRisk,
+    ActorHandle, ApprovalPolicy, ApprovalStrategy, ExecutionPlan, GovernanceParticipation,
+    IntegrationTarget, PlanOwner, PlannedStep, ResponsibilityAssignment, TaskPriority, TaskRequest,
+    TaskRisk, WorkflowGovernance,
 };

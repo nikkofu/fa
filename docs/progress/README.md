@@ -34,3 +34,4 @@
 - [2026-03-11-m1-pilot-workflow-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-pilot-workflow-stage-kickoff.md)
 - [2026-03-12-m1-evidence-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-12-m1-evidence-stage-kickoff.md)
 - [2026-03-12-m1-release-readiness-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-12-m1-release-readiness-stage-kickoff.md)
+- [2026-03-12-m1-governance-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-12-m1-governance-stage-kickoff.md)

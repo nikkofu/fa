@@ -166,6 +166,17 @@ async fn task_evidence(
         .map_err(error_response)
 }
 
+async fn task_governance(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<fa_domain::WorkflowGovernance>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .orchestrator
+        .get_task_governance(task_id)
+        .map(Json)
+        .map_err(error_response)
+}
+
 async fn approve_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
@@ -356,6 +367,7 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/tasks/plan", post(plan_task))
         .route("/api/v1/tasks/{task_id}", get(get_task))
         .route("/api/v1/tasks/{task_id}/evidence", get(task_evidence))
+        .route("/api/v1/tasks/{task_id}/governance", get(task_governance))
         .route(
             "/api/v1/tasks/{task_id}/audit-events",
             get(task_audit_events),
@@ -482,6 +494,29 @@ mod tests {
         assert!(evidence_items
             .iter()
             .any(|item| item["summary"].as_str().unwrap_or("").contains("telemetry")));
+
+        let governance_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/governance"))
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should succeed");
+        assert_eq!(governance_response.status(), StatusCode::OK);
+        let governance_json = json_body(governance_response).await;
+        assert_eq!(
+            governance_json["approval_strategy"]["required_role"],
+            "safety_officer"
+        );
+        assert!(governance_json["responsibility_matrix"]
+            .as_array()
+            .expect("responsibility list")
+            .iter()
+            .any(|item| item["role"] == "maintenance_engineer"));
 
         let approve_response = app
             .clone()

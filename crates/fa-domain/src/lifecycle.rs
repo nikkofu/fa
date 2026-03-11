@@ -269,7 +269,10 @@ pub struct PlannedTaskBundle {
 mod tests {
     use uuid::Uuid;
 
-    use crate::{AgenticPattern, ApprovalPolicy, PlanOwner, PlannedStep, TaskPriority, TaskRisk};
+    use crate::{
+        AgenticPattern, ApprovalPolicy, PlanOwner, PlannedStep, TaskPriority, TaskRisk,
+        WorkflowGovernance,
+    };
 
     use super::*;
 
@@ -300,6 +303,7 @@ mod tests {
             patterns: vec![AgenticPattern::Coordinator],
             rationale: vec!["test".to_string()],
             approval_policy,
+            governance: WorkflowGovernance::default(),
             steps: vec![PlannedStep {
                 sequence: 1,
                 label: "Test".to_string(),

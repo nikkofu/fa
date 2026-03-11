@@ -175,6 +175,10 @@ if [[ "$(count_matches "$evidence_response" '"source_ref"' | wc -l | tr -d ' ')"
 fi
 assert_contains "$evidence_response" 'telemetry'
 
+governance_response="$(curl -fsS "http://$HOST:$PORT/api/v1/tasks/$TASK_ID/governance")"
+assert_contains "$governance_response" '"required_role":"safety_officer"'
+assert_contains "$governance_response" '"maintenance_engineer"'
+
 stop_server
 start_server
 
@@ -187,6 +191,9 @@ if [[ "$(count_matches "$persisted_evidence_response" '"source_ref"' | wc -l | t
   echo "assertion failed: expected evidence items after restart" >&2
   exit 1
 fi
+
+persisted_governance_response="$(curl -fsS "http://$HOST:$PORT/api/v1/tasks/$TASK_ID/governance")"
+assert_contains "$persisted_governance_response" '"required_role":"safety_officer"'
 
 approve_response="$(curl -fsS "http://$HOST:$PORT/api/v1/tasks/$TASK_ID/approve" \
   -H "Content-Type: application/json" \

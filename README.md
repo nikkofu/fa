@@ -140,6 +140,12 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/evidence | jq
 ```
 
+查看单个任务的治理矩阵与审批策略：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/governance | jq
+```
+
 提交任务规划请求：
 
 ```bash
@@ -196,8 +202,10 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 - `tasks/intake` 现在会返回 `correlation_id`、`planned_task`、`context_reads` 和 `evidence`
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
 - `evidence` 是从 connector 读取结果提炼出的结构化任务证据快照
+- `planned_task.task.plan.governance` 现在会返回责任矩阵、审批策略和 fallback actions
 - 审计事件可通过 `/api/v1/audit/events` 查看，也支持 `task_id / correlation_id / kind / approval_id` 过滤
 - 单任务 evidence 可通过 `/api/v1/tasks/{task_id}/evidence` 查看
+- 单任务 governance 可通过 `/api/v1/tasks/{task_id}/governance` 查看
 - 单任务审计回放可通过 `/api/v1/tasks/{task_id}/audit-events` 查看
 - `priority` 当前只接受 `routine / expedited / critical`
 - `risk` 当前只接受 `low / medium / high / critical`
@@ -327,6 +335,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - 首条 pilot workflow 候选比较与规格定义基线
 - 结构化 task evidence snapshot 与任务级 evidence 查询接口
 - `v0.2.0` 测试清单、发布清单与可重复 smoke script 基线
+- workflow responsibility matrix 与 approval strategy 基线
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -335,8 +344,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 
 下一步优先级：
 
-1. 为 pilot workflow 增加更明确的角色责任矩阵与审批策略表达
-2. 准备 `v0.2.0` 版本号、tag 和最终 release note
+1. 准备 `v0.2.0` 版本号、tag 和最终 release note
+2. 为 pilot workflow 增加更严格的审批角色校验与策略约束
 3. 评估 SQLite 向更强数据库后端的迁移路径
 4. 扩展 evidence、审批 SLA 和异常路径表达
 

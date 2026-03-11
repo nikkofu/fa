@@ -63,6 +63,8 @@ pub struct ExecutionPlan {
     pub patterns: Vec<AgenticPattern>,
     pub rationale: Vec<String>,
     pub approval_policy: ApprovalPolicy,
+    #[serde(default)]
+    pub governance: WorkflowGovernance,
     pub steps: Vec<PlannedStep>,
     pub created_at: DateTime<Utc>,
 }
@@ -87,6 +89,65 @@ impl ApprovalPolicy {
             ApprovalPolicy::OperationsSupervisor => "operations_supervisor",
             ApprovalPolicy::SafetyOfficer => "safety_officer",
             ApprovalPolicy::PlantManager => "plant_manager",
+        }
+    }
+
+    pub fn escalation_role(self) -> Option<&'static str> {
+        match self {
+            ApprovalPolicy::Auto => None,
+            ApprovalPolicy::OperationsSupervisor | ApprovalPolicy::SafetyOfficer => {
+                Some("plant_manager")
+            }
+            ApprovalPolicy::PlantManager => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct WorkflowGovernance {
+    #[serde(default)]
+    pub responsibility_matrix: Vec<ResponsibilityAssignment>,
+    #[serde(default)]
+    pub approval_strategy: ApprovalStrategy,
+    #[serde(default)]
+    pub fallback_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponsibilityAssignment {
+    pub role: String,
+    pub participation: GovernanceParticipation,
+    pub responsibilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GovernanceParticipation {
+    Responsible,
+    Accountable,
+    Consulted,
+    Informed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalStrategy {
+    pub policy: ApprovalPolicy,
+    pub manual_approval_required: bool,
+    pub required_role: String,
+    pub escalation_role: Option<String>,
+    pub decision_scope: Vec<String>,
+    pub rationale: String,
+}
+
+impl Default for ApprovalStrategy {
+    fn default() -> Self {
+        Self {
+            policy: ApprovalPolicy::Auto,
+            manual_approval_required: false,
+            required_role: ApprovalPolicy::Auto.required_role().to_string(),
+            escalation_role: None,
+            decision_scope: Vec::new(),
+            rationale: String::new(),
         }
     }
 }

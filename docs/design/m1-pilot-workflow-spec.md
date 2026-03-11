@@ -141,6 +141,11 @@ workflow 的输出应包括：
 - `GET /api/v1/tasks/{task_id}` 返回 `evidence`
 - `GET /api/v1/tasks/{task_id}/evidence` 返回任务级 evidence 快照列表
 
+当前阶段治理输出方式：
+
+- `planned_task.task.plan.governance` 返回 responsibility matrix、approval strategy 和 fallback actions
+- `GET /api/v1/tasks/{task_id}/governance` 返回任务级治理视图
+
 ## 10. 明确禁止的动作
 
 当前阶段明确不允许：
@@ -167,6 +172,9 @@ workflow 的输出应包括：
 - 任务查询
 - 任务级 evidence snapshot
 - 任务级 evidence 查询接口
+- workflow responsibility matrix
+- approval strategy 输出
+- 任务级 governance 查询接口
 - 审批
 - 修订重提
 - 执行开始
@@ -178,7 +186,7 @@ workflow 的输出应包括：
 
 - workflow 级可视化视图
 - 与真实 CMMS 的受控写入草稿接口
-- 角色责任矩阵的更强策略表达
+- 审批角色强校验与多级审批链
 
 ## 13. 试运行验收标准
 
