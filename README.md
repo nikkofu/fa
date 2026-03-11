@@ -64,27 +64,33 @@ cargo run -p fa-server
 默认监听：
 
 ```text
-FA_SERVER_ADDR=0.0.0.0:8080
+FA_SERVER_ADDR=0.0.0.0:8000
 ```
+
+本地端口约定：
+
+- `FA` 默认占用 `8000`
+- 如本机已有其他项目使用 `8000`，通过 `FA_SERVER_ADDR` 覆盖，不要直接改代码默认值
+- 端口分配与冲突规避说明见 [docs/development/local-environment.md](/Users/admin/Documents/WORK/ai/fa/docs/development/local-environment.md)
 
 ## API 起步接口
 
 健康检查：
 
 ```bash
-curl -sS http://127.0.0.1:8080/healthz
+curl -sS http://127.0.0.1:8000/healthz
 ```
 
 查看平台蓝图：
 
 ```bash
-curl -sS http://127.0.0.1:8080/api/v1/blueprint | jq
+curl -sS http://127.0.0.1:8000/api/v1/blueprint | jq
 ```
 
 提交任务规划请求：
 
 ```bash
-curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
+curl -sS http://127.0.0.1:8000/api/v1/tasks/plan \
   -H "Content-Type: application/json" \
   -d '{
     "id": "72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0",
@@ -109,7 +115,7 @@ curl -sS http://127.0.0.1:8080/api/v1/tasks/plan \
 提交任务 intake 请求并生成可追踪任务记录：
 
 ```bash
-curl -sS http://127.0.0.1:8080/api/v1/tasks/intake \
+curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
   -H "Content-Type: application/json" \
   -d '{
     "id": "72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0",

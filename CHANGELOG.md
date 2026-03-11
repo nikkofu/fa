@@ -11,6 +11,11 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Task and approval lifecycle models with guarded state transitions
 - Initial connector read-only trait and audit sink abstractions
 - M1 execution plan and lifecycle design baseline documents
+
+### Changed
+
+- Default local API port changed from `8080` to `8000`
+- Added local development port convention to avoid conflicts with other projects
 - Rust workspace with `fa-domain`, `fa-core`, and `fa-server`
 - Manufacturing-oriented domain model for enterprise, sites, workers, equipment, and task planning
 - Initial orchestration engine that selects agentic patterns based on risk, scope, and approval needs

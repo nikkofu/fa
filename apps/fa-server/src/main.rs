@@ -23,7 +23,7 @@ struct AppState {
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 
-    let address = env::var("FA_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    let address = env::var("FA_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:8000".to_string());
     let socket_addr: SocketAddr = address
         .parse()
         .with_context(|| format!("invalid FA_SERVER_ADDR: {address}"))?;
