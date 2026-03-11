@@ -133,12 +133,14 @@ trait:
 - 领域生命周期模型：`crates/fa-domain/src/lifecycle.rs`
 - connector 抽象：`crates/fa-core/src/connectors.rs`
 - audit 抽象：`crates/fa-core/src/audit.rs`
+- mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
+- audit 实现：`InMemoryAuditSink`
 
 ## 7. 下一步
 
 基于本设计，下一步实现顺序应为：
 
-1. 将 planner 产物挂接到 `TaskRecord`
-2. 增加审批聚合的 API 暴露
-3. 实现 mock MES / CMMS connector
-4. 实现 in-memory audit sink
+1. 让 API 层透传 `correlation_id`
+2. 扩展审批聚合 API
+3. 增加任务读取、审批动作与执行 stub endpoint
+4. 为 connector 和 audit 加上更完整的集成测试

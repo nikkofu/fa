@@ -11,6 +11,9 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - Task and approval lifecycle models with guarded state transitions
 - Initial connector read-only trait and audit sink abstractions
 - M1 execution plan and lifecycle design baseline documents
+- Mock `MES` and mock `CMMS` read-only connector implementations
+- In-memory audit sink and audit events endpoint
+- Correlation-id aware intake flow with connector context hydration
 
 ### Changed
 

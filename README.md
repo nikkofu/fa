@@ -87,6 +87,12 @@ curl -sS http://127.0.0.1:8000/healthz
 curl -sS http://127.0.0.1:8000/api/v1/blueprint | jq
 ```
 
+查看内存审计事件：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/audit/events | jq
+```
+
 提交任务规划请求：
 
 ```bash
@@ -116,6 +122,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/plan \
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
+  -H "x-correlation-id: demo-intake-001" \
   -H "Content-Type: application/json" \
   -d '{
     "id": "72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0",
@@ -136,6 +143,12 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
     "requires_diagnostic_loop": true
   }' | jq
 ```
+
+说明：
+
+- `tasks/intake` 现在会返回 `correlation_id`、`planned_task` 和 `context_reads`
+- `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
+- 事件会写入内存审计 sink，可通过 `/api/v1/audit/events` 查看
 
 ## 仓库治理
 

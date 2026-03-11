@@ -3,20 +3,22 @@ use std::{env, net::SocketAddr};
 use anyhow::Context;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use fa_core::{bootstrap_blueprint, WorkOrchestrator};
+use fa_core::{bootstrap_blueprint, InMemoryAuditSink, WorkOrchestrator};
 use fa_domain::TaskRequest;
 use serde_json::json;
+use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone)]
 struct AppState {
     orchestrator: WorkOrchestrator,
+    audit_sink: Arc<InMemoryAuditSink>,
 }
 
 #[tokio::main]
@@ -28,13 +30,16 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid FA_SERVER_ADDR: {address}"))?;
 
+    let audit_sink = Arc::new(InMemoryAuditSink::default());
     let state = AppState {
-        orchestrator: WorkOrchestrator::default(),
+        orchestrator: WorkOrchestrator::with_m1_defaults(audit_sink.clone()),
+        audit_sink,
     };
 
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/blueprint", get(blueprint))
+        .route("/api/v1/audit/events", get(audit_events))
         .route("/api/v1/tasks/intake", post(intake_task))
         .route("/api/v1/tasks/plan", post(plan_task))
         .layer(CorsLayer::permissive())
@@ -72,20 +77,44 @@ async fn plan_task(
 
 async fn intake_task(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<TaskRequest>,
-) -> Result<Json<fa_domain::PlannedTaskBundle>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<fa_core::TaskIntakeResult>, (StatusCode, Json<serde_json::Value>)> {
+    let correlation_id = headers
+        .get("x-correlation-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
     state
         .orchestrator
-        .intake_task(request)
+        .intake_task_with_correlation(request, correlation_id)
         .map(Json)
         .map_err(|error| {
+            let status = if error.downcast_ref::<fa_domain::LifecycleError>().is_some() {
+                StatusCode::UNPROCESSABLE_ENTITY
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
             (
-                StatusCode::UNPROCESSABLE_ENTITY,
+                status,
                 Json(json!({
                     "error": error.to_string(),
                 })),
             )
         })
+}
+
+async fn audit_events(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<fa_core::AuditEvent>>, (StatusCode, Json<serde_json::Value>)> {
+    state.audit_sink.snapshot().map(Json).map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": error.to_string(),
+            })),
+        )
+    })
 }
 
 async fn shutdown_signal() {

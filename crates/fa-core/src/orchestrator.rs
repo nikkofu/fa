@@ -1,32 +1,71 @@
+use std::sync::Arc;
+
+use anyhow::Result;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use fa_domain::{
-    AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, LifecycleError, PlanOwner,
-    PlannedStep, PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
+    AgenticPattern, ApprovalPolicy, ApprovalRecord, ExecutionPlan, PlanOwner, PlannedStep,
+    PlannedTaskBundle, TaskPriority, TaskRecord, TaskRequest, TaskRisk,
 };
 
+use crate::audit::{AuditActor, AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
 use crate::blueprint::{bootstrap_blueprint, PlatformBlueprint};
+use crate::connectors::{
+    ConnectorReadRequest, ConnectorReadResult, ConnectorRecordKind, ConnectorRegistry,
+    ConnectorSubject,
+};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskIntakeResult {
+    pub correlation_id: String,
+    pub planned_task: PlannedTaskBundle,
+    pub context_reads: Vec<ConnectorReadResult>,
+}
+
+#[derive(Clone)]
 pub struct WorkOrchestrator {
     blueprint: PlatformBlueprint,
+    connectors: ConnectorRegistry,
+    audit_sink: Arc<InMemoryAuditSink>,
 }
 
 impl Default for WorkOrchestrator {
     fn default() -> Self {
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
         Self {
             blueprint: bootstrap_blueprint(),
+            connectors: ConnectorRegistry::with_m1_defaults(),
+            audit_sink,
         }
     }
 }
 
 impl WorkOrchestrator {
     pub fn new(blueprint: PlatformBlueprint) -> Self {
-        Self { blueprint }
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        Self {
+            blueprint,
+            connectors: ConnectorRegistry::with_m1_defaults(),
+            audit_sink,
+        }
+    }
+
+    pub fn with_m1_defaults(audit_sink: Arc<InMemoryAuditSink>) -> Self {
+        Self {
+            blueprint: bootstrap_blueprint(),
+            connectors: ConnectorRegistry::with_m1_defaults(),
+            audit_sink,
+        }
     }
 
     pub fn blueprint(&self) -> &PlatformBlueprint {
         &self.blueprint
+    }
+
+    pub fn audit_sink(&self) -> &Arc<InMemoryAuditSink> {
+        &self.audit_sink
     }
 
     pub fn plan_task(&self, request: TaskRequest) -> ExecutionPlan {
@@ -45,22 +84,166 @@ impl WorkOrchestrator {
         }
     }
 
-    pub fn intake_task(&self, request: TaskRequest) -> Result<PlannedTaskBundle, LifecycleError> {
+    pub fn intake_task(&self, request: TaskRequest) -> Result<TaskIntakeResult> {
+        self.intake_task_with_correlation(request, None)
+    }
+
+    pub fn intake_task_with_correlation(
+        &self,
+        request: TaskRequest,
+        correlation_id: Option<String>,
+    ) -> Result<TaskIntakeResult> {
+        let correlation_id = correlation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let context_reads = self.hydrate_context(&request, &correlation_id)?;
         let plan = self.plan_task(request.clone());
         let approval_policy = plan.approval_policy;
         let mut task = TaskRecord::draft(request.clone());
-        task.apply_plan(plan)?;
+        self.record_event(
+            Some(correlation_id.clone()),
+            AuditEventKind::TaskCreated,
+            Some(task.id),
+            None,
+            AuditActor::Human(request.initiator.clone()),
+            format!("Task '{}' accepted for intake", request.title),
+        )?;
+        task.apply_plan(plan.clone())?;
+        self.record_event(
+            Some(correlation_id.clone()),
+            AuditEventKind::TaskPlanned,
+            Some(task.id),
+            None,
+            AuditActor::System("workflow-engine".to_string()),
+            format!(
+                "Task '{}' planned with {:?} approval policy",
+                request.title, approval_policy
+            ),
+        )?;
 
         let approval = if approval_policy.requires_human_approval() {
             let approval = ApprovalRecord::pending(task.id, approval_policy, request.initiator)?;
             task.request_approval(approval.id)?;
+            self.record_event(
+                Some(correlation_id.clone()),
+                AuditEventKind::ApprovalRequested,
+                Some(task.id),
+                Some(approval.id),
+                AuditActor::System("workflow-engine".to_string()),
+                format!(
+                    "Approval requested from role '{}' for task '{}'",
+                    approval.required_role, task.request.title
+                ),
+            )?;
+            self.record_event(
+                Some(correlation_id.clone()),
+                AuditEventKind::TaskStatusChanged,
+                Some(task.id),
+                Some(approval.id),
+                AuditActor::System("workflow-engine".to_string()),
+                format!("Task transitioned to {:?}", task.status),
+            )?;
             Some(approval)
         } else {
             task.auto_approve()?;
+            self.record_event(
+                Some(correlation_id.clone()),
+                AuditEventKind::TaskStatusChanged,
+                Some(task.id),
+                None,
+                AuditActor::System("workflow-engine".to_string()),
+                format!("Task auto-approved and transitioned to {:?}", task.status),
+            )?;
             None
         };
 
-        Ok(PlannedTaskBundle { task, approval })
+        Ok(TaskIntakeResult {
+            correlation_id,
+            planned_task: PlannedTaskBundle { task, approval },
+            context_reads,
+        })
+    }
+
+    fn hydrate_context(
+        &self,
+        request: &TaskRequest,
+        correlation_id: &str,
+    ) -> Result<Vec<ConnectorReadResult>> {
+        let mut results = Vec::new();
+        let subject = primary_subject(request);
+
+        for target in &request.integrations {
+            let Some(kind) = ConnectorRegistry::kind_for_target(target) else {
+                continue;
+            };
+            let Some(connector) = self.connectors.connector_for_kind(&kind) else {
+                continue;
+            };
+            let read_request = ConnectorReadRequest {
+                correlation_id: Some(correlation_id.to_string()),
+                task_id: Some(request.id),
+                subject: subject.clone(),
+                requested_records: requested_record_kinds(target),
+            };
+            let result = connector.read(&read_request)?;
+            self.record_event(
+                Some(correlation_id.to_string()),
+                AuditEventKind::ConnectorRead,
+                Some(request.id),
+                None,
+                AuditActor::System(format!("{:?}", result.connector)),
+                format!(
+                    "Read {} context records from {:?}",
+                    result.records.len(),
+                    result.connector
+                ),
+            )?;
+            results.push(result);
+        }
+
+        Ok(results)
+    }
+
+    fn record_event(
+        &self,
+        correlation_id: Option<String>,
+        kind: AuditEventKind,
+        task_id: Option<Uuid>,
+        approval_id: Option<Uuid>,
+        actor: AuditActor,
+        summary: String,
+    ) -> Result<()> {
+        self.audit_sink.record(AuditEvent {
+            id: Uuid::new_v4(),
+            correlation_id,
+            occurred_at: Utc::now(),
+            kind,
+            task_id,
+            approval_id,
+            actor,
+            summary,
+        })
+    }
+}
+
+fn primary_subject(request: &TaskRequest) -> ConnectorSubject {
+    request
+        .equipment_ids
+        .first()
+        .cloned()
+        .map(ConnectorSubject::Equipment)
+        .unwrap_or(ConnectorSubject::Task(request.id))
+}
+
+fn requested_record_kinds(target: &fa_domain::IntegrationTarget) -> Vec<ConnectorRecordKind> {
+    match target {
+        fa_domain::IntegrationTarget::Mes => vec![
+            ConnectorRecordKind::TaskContext,
+            ConnectorRecordKind::EquipmentTelemetry,
+        ],
+        fa_domain::IntegrationTarget::Cmms => vec![
+            ConnectorRecordKind::MaintenanceHistory,
+            ConnectorRecordKind::WorkOrderContext,
+        ],
+        _ => Vec::new(),
     }
 }
 
@@ -232,11 +415,14 @@ fn build_rationale(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use uuid::Uuid;
 
     use fa_domain::{ActorHandle, IntegrationTarget};
 
     use super::*;
+    use crate::InMemoryAuditSink;
 
     fn base_request() -> TaskRequest {
         TaskRequest {
@@ -298,7 +484,8 @@ mod tests {
 
     #[test]
     fn intake_task_auto_approves_low_risk_work() {
-        let orchestrator = WorkOrchestrator::default();
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
         let mut request = base_request();
         request.title = "Summarize shift notes".to_string();
         request.description = "Summarize shift notes for morning handoff.".to_string();
@@ -308,30 +495,48 @@ mod tests {
         request.equipment_ids.clear();
         request.requires_diagnostic_loop = false;
 
-        let bundle = orchestrator
+        let intake_result = orchestrator
             .intake_task(request)
             .expect("intake should succeed");
 
-        assert_eq!(bundle.task.status, fa_domain::TaskStatus::Approved);
-        assert!(bundle.approval.is_none());
+        assert_eq!(
+            intake_result.planned_task.task.status,
+            fa_domain::TaskStatus::Approved
+        );
+        assert!(intake_result.planned_task.approval.is_none());
+        assert_eq!(intake_result.context_reads.len(), 1);
+        assert!(!audit_sink
+            .snapshot()
+            .expect("snapshot should work")
+            .is_empty());
     }
 
     #[test]
     fn intake_task_creates_manual_approval_for_high_risk_work() {
-        let orchestrator = WorkOrchestrator::default();
+        let audit_sink = Arc::new(InMemoryAuditSink::default());
+        let orchestrator = WorkOrchestrator::with_m1_defaults(audit_sink.clone());
         let mut request = base_request();
         request.priority = TaskPriority::Critical;
         request.risk = TaskRisk::High;
         request.requires_human_approval = true;
 
-        let bundle = orchestrator
+        let intake_result = orchestrator
             .intake_task(request)
             .expect("intake should succeed");
 
-        assert_eq!(bundle.task.status, fa_domain::TaskStatus::AwaitingApproval);
         assert_eq!(
-            bundle.approval.as_ref().map(|approval| approval.policy),
+            intake_result.planned_task.task.status,
+            fa_domain::TaskStatus::AwaitingApproval
+        );
+        assert_eq!(
+            intake_result
+                .planned_task
+                .approval
+                .as_ref()
+                .map(|approval| approval.policy),
             Some(ApprovalPolicy::SafetyOfficer)
         );
+        assert_eq!(intake_result.context_reads.len(), 2);
+        assert!(audit_sink.snapshot().expect("snapshot should work").len() >= 4);
     }
 }
