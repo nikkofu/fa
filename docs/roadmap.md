@@ -18,6 +18,8 @@
 
 当前状态：`In Progress`
 
+当前进行中的执行切片：`M1-W05 Repository Abstraction`
+
 已完成的子项：
 
 - 任务状态机
@@ -43,6 +45,7 @@
 - 任务不再只有规划结果，而具备生命周期
 - connector 可替换，不与具体供应商绑定
 - 生命周期 API 主路径可通过服务层测试验证
+- task state storage 可通过 repository abstraction 替换而不改 API 主路径
 
 执行计划：
 

@@ -26,3 +26,4 @@
 ## 当前进展记录
 
 - [2026-03-11-m1-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-stage-kickoff.md)
+- [2026-03-11-m1-repository-stage-kickoff.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/2026-03-11-m1-repository-stage-kickoff.md)

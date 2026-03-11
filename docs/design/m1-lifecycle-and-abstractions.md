@@ -2,12 +2,13 @@
 
 ## 1. 目的
 
-本设计文档固化 `M1-W01` 到 `M1-W04` 的最小设计结论，为后续编码提供一致边界：
+本设计文档固化 `M1-W01` 到 `M1-W05` 的最小设计结论，为后续编码提供一致边界：
 
 - 任务生命周期模型
 - 审批生命周期模型
 - connector read-only 抽象
 - audit event 最小模型
+- task repository abstraction
 
 ## 2. 任务生命周期
 
@@ -128,12 +129,36 @@ trait:
 - event 必须允许挂靠 `task_id`、`approval_id`、`correlation_id`
 - actor 必须区分 human / agent / system
 
-## 6. 当前实现落点
+## 6. Task Repository 抽象
+
+### 6.1 目标
+
+把任务状态存储从 `WorkOrchestrator` 内部实现细节，提升为可替换边界。
+
+### 6.2 边界
+
+trait:
+
+- `TaskRepository`
+
+当前实现：
+
+- `InMemoryTaskRepository`
+
+### 6.3 设计原则
+
+- 编排器不直接绑定某种具体存储结构
+- 当前阶段优先稳定接口，不提前引入数据库特定能力
+- 保持当前生命周期 API 行为不变
+- 为后续持久化、回放和 optimistic locking 留出演进空间
+
+## 7. 当前实现落点
 
 - 领域生命周期模型：`crates/fa-domain/src/lifecycle.rs`
 - connector 抽象：`crates/fa-core/src/connectors.rs`
 - audit 抽象：`crates/fa-core/src/audit.rs`
-- 内存任务存储与动作编排：`crates/fa-core/src/orchestrator.rs`
+- task repository abstraction：`crates/fa-core/src/repository.rs`
+- 生命周期动作编排：`crates/fa-core/src/orchestrator.rs`
 - mock connector 实现：`MockMesConnector`、`MockCmmsConnector`
 - audit 实现：`InMemoryAuditSink`
 - 生命周期 API：
@@ -141,13 +166,15 @@ trait:
   - `GET /api/v1/tasks/{task_id}`
   - `POST /api/v1/tasks/{task_id}/approve`
   - `POST /api/v1/tasks/{task_id}/execute`
+  - `POST /api/v1/tasks/{task_id}/complete`
+  - `POST /api/v1/tasks/{task_id}/fail`
   - `GET /api/v1/audit/events`
 
-## 7. 下一步
+## 8. 下一步
 
 基于本设计，下一步实现顺序应为：
 
-1. 增加任务完成、失败和回退动作
-2. 为 API 层补完整集成测试
-3. 将 in-memory task store 演进为可替换 repository
-4. 为 connector 和 audit 增加更完整的契约测试
+1. 扩展审批驳回、修订与异常路径
+2. 为 repository 增加持久化实现候选
+3. 为 connector 和 audit 增加更完整的契约测试
+4. 冻结首条试运行 workflow 规格

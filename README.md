@@ -251,6 +251,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - HTTP API 启动骨架
 - 任务生命周期主链：`intake -> get -> approve -> execute -> complete / fail`
 - mock `MES` / mock `CMMS` connector 上下文读取
+- 可替换 `task repository` 抽象与内存实现
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -260,9 +261,9 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 下一步优先级：
 
 1. 引入持久化与审计存储
-2. 定义 connector trait，接入 ERP / MES / CMMS 只读链路
-3. 建立审批流、执行流与回滚策略
-4. 建立试运行场景与验收标准
+2. 扩展审批、修订、失败的异常路径
+3. 引入持久化 task repository 与 audit store
+4. 冻结首条试运行 workflow 场景与验收标准
 
 ## 团队工作流
 

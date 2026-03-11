@@ -17,6 +17,7 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 - In-memory task store with `get/approve/execute` lifecycle endpoints
 - Task lifecycle `complete / fail` actions
 - Service-level integration tests covering the lifecycle happy path and failure path
+- `TaskRepository` abstraction with injectable in-memory repository implementation
 
 ### Changed
 

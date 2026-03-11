@@ -2,6 +2,7 @@ mod audit;
 mod blueprint;
 mod connectors;
 mod orchestrator;
+mod repository;
 
 pub use audit::{
     AuditActor, AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink, NoopAuditSink,
@@ -18,3 +19,4 @@ pub use orchestrator::{
     ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
     OrchestrationError, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };
+pub use repository::{InMemoryTaskRepository, TaskRepository};

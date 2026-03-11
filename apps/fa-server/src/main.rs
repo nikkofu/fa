@@ -218,7 +218,7 @@ fn error_response(error: OrchestrationError) -> (StatusCode, Json<serde_json::Va
         OrchestrationError::TaskNotFound(_) | OrchestrationError::ApprovalNotFound(_) => {
             StatusCode::NOT_FOUND
         }
-        OrchestrationError::TaskStorePoisoned
+        OrchestrationError::TaskRepository(_)
         | OrchestrationError::Connector(_)
         | OrchestrationError::Audit(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
