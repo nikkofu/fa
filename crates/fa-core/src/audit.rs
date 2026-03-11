@@ -49,8 +49,40 @@ pub trait AuditSink: Send + Sync {
     fn record(&self, event: AuditEvent) -> Result<()>;
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditEventQuery {
+    pub task_id: Option<Uuid>,
+    pub approval_id: Option<Uuid>,
+    pub correlation_id: Option<String>,
+    pub kind: Option<AuditEventKind>,
+}
+
+impl AuditEventQuery {
+    pub fn matches(&self, event: &AuditEvent) -> bool {
+        self.task_id
+            .is_none_or(|task_id| event.task_id == Some(task_id))
+            && self
+                .approval_id
+                .is_none_or(|approval_id| event.approval_id == Some(approval_id))
+            && self
+                .correlation_id
+                .as_ref()
+                .is_none_or(|correlation_id| event.correlation_id.as_ref() == Some(correlation_id))
+            && self.kind.as_ref().is_none_or(|kind| &event.kind == kind)
+    }
+}
+
 pub trait AuditStore: AuditSink {
     fn snapshot(&self) -> Result<Vec<AuditEvent>>;
+
+    fn query(&self, query: &AuditEventQuery) -> Result<Vec<AuditEvent>> {
+        self.snapshot().map(|events| {
+            events
+                .into_iter()
+                .filter(|event| query.matches(event))
+                .collect()
+        })
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -193,6 +225,72 @@ mod tests {
         let snapshot = sink.snapshot().expect("snapshot should be readable");
 
         assert_eq!(snapshot, vec![event]);
+    }
+
+    #[test]
+    fn audit_query_filters_by_task_correlation_and_kind() {
+        let sink = InMemoryAuditSink::default();
+        let task_id = Uuid::new_v4();
+        let other_task_id = Uuid::new_v4();
+        let first = AuditEvent {
+            id: Uuid::new_v4(),
+            correlation_id: Some("corr-3".to_string()),
+            occurred_at: Utc::now(),
+            kind: AuditEventKind::TaskCreated,
+            task_id: Some(task_id),
+            approval_id: None,
+            actor: AuditActor::System("test".to_string()),
+            summary: "created".to_string(),
+        };
+        let second = AuditEvent {
+            id: Uuid::new_v4(),
+            correlation_id: Some("corr-4".to_string()),
+            occurred_at: Utc::now(),
+            kind: AuditEventKind::ApprovalRequested,
+            task_id: Some(task_id),
+            approval_id: Some(Uuid::new_v4()),
+            actor: AuditActor::System("test".to_string()),
+            summary: "approval".to_string(),
+        };
+        let third = AuditEvent {
+            id: Uuid::new_v4(),
+            correlation_id: Some("corr-3".to_string()),
+            occurred_at: Utc::now(),
+            kind: AuditEventKind::TaskCreated,
+            task_id: Some(other_task_id),
+            approval_id: None,
+            actor: AuditActor::System("test".to_string()),
+            summary: "other".to_string(),
+        };
+
+        sink.record(first.clone()).expect("first should record");
+        sink.record(second.clone()).expect("second should record");
+        sink.record(third).expect("third should record");
+
+        let task_events = sink
+            .query(&AuditEventQuery {
+                task_id: Some(task_id),
+                ..AuditEventQuery::default()
+            })
+            .expect("task query should succeed");
+        assert_eq!(task_events, vec![first.clone(), second.clone()]);
+
+        let correlation_events = sink
+            .query(&AuditEventQuery {
+                correlation_id: Some("corr-4".to_string()),
+                ..AuditEventQuery::default()
+            })
+            .expect("correlation query should succeed");
+        assert_eq!(correlation_events, vec![second.clone()]);
+
+        let kind_events = sink
+            .query(&AuditEventQuery {
+                task_id: Some(task_id),
+                kind: Some(AuditEventKind::ApprovalRequested),
+                ..AuditEventQuery::default()
+            })
+            .expect("kind query should succeed");
+        assert_eq!(kind_events, vec![second]);
     }
 
     #[test]

@@ -94,10 +94,22 @@ curl -sS http://127.0.0.1:8000/healthz
 curl -sS http://127.0.0.1:8000/api/v1/blueprint | jq
 ```
 
-查看内存审计事件：
+查看审计事件：
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/audit/events | jq
+```
+
+按 `correlation_id` 过滤审计事件：
+
+```bash
+curl -sS 'http://127.0.0.1:8000/api/v1/audit/events?correlation_id=demo-approve-001' | jq
+```
+
+回放单个任务的审计事件：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0/audit-events | jq
 ```
 
 提交任务规划请求：
@@ -155,7 +167,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 
 - `tasks/intake` 现在会返回 `correlation_id`、`planned_task` 和 `context_reads`
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
-- 事件会写入内存审计 sink，可通过 `/api/v1/audit/events` 查看
+- 审计事件可通过 `/api/v1/audit/events` 查看，也支持 `task_id / correlation_id / kind / approval_id` 过滤
+- 单任务审计回放可通过 `/api/v1/tasks/{task_id}/audit-events` 查看
 - `priority` 当前只接受 `routine / expedited / critical`
 - `risk` 当前只接受 `low / medium / high / critical`
 
@@ -277,6 +290,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - mock `MES` / mock `CMMS` connector 上下文读取
 - 可替换 `task repository` 抽象与内存实现
 - `FA_DATA_DIR` 驱动的本地文件持久化 task / audit storage
+- 按任务和链路主键查询的审计回放能力
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -286,8 +300,8 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 下一步优先级：
 
 1. 演进 SQLite / Postgres 持久化实现
-2. 扩展更多审批异常、修订元数据与失败路径
-3. 引入审计回放视图与运行态查询能力
+2. 引入审计回放视图与更强查询能力
+3. 扩展更多审批异常、修订元数据与失败路径
 4. 冻结首条试运行 workflow 场景与验收标准
 
 ## 团队工作流

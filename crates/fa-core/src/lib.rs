@@ -5,7 +5,7 @@ mod orchestrator;
 mod repository;
 
 pub use audit::{
-    AuditActor, AuditEvent, AuditEventKind, AuditSink, AuditStore, FileAuditStore,
+    AuditActor, AuditEvent, AuditEventKind, AuditEventQuery, AuditSink, AuditStore, FileAuditStore,
     InMemoryAuditSink, NoopAuditSink,
 };
 pub use blueprint::{

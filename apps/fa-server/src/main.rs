@@ -2,19 +2,20 @@ use std::{env, net::SocketAddr};
 
 use anyhow::Context;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use fa_core::{
-    bootstrap_blueprint, ApprovalActionRequest, AuditStore, CompleteTaskRequest,
-    ExecuteTaskRequest, FailTaskRequest, FileAuditStore, FileTaskRepository, InMemoryAuditSink,
-    InMemoryTaskRepository, OrchestrationError, ResubmitTaskRequest, TrackedTaskState,
-    WorkOrchestrator,
+    bootstrap_blueprint, ApprovalActionRequest, AuditEventKind, AuditEventQuery, AuditStore,
+    CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest, FileAuditStore, FileTaskRepository,
+    InMemoryAuditSink, InMemoryTaskRepository, OrchestrationError, ResubmitTaskRequest,
+    TrackedTaskState, WorkOrchestrator,
 };
 use fa_domain::TaskRequest;
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -25,6 +26,25 @@ use uuid::Uuid;
 struct AppState {
     orchestrator: WorkOrchestrator,
     audit_sink: Arc<dyn AuditStore>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct AuditEventsQueryParams {
+    task_id: Option<Uuid>,
+    approval_id: Option<Uuid>,
+    correlation_id: Option<String>,
+    kind: Option<AuditEventKind>,
+}
+
+impl From<AuditEventsQueryParams> for AuditEventQuery {
+    fn from(value: AuditEventsQueryParams) -> Self {
+        Self {
+            task_id: value.task_id,
+            approval_id: value.approval_id,
+            correlation_id: value.correlation_id,
+            kind: value.kind,
+        }
+    }
 }
 
 #[tokio::main]
@@ -86,8 +106,35 @@ async fn intake_task(
 
 async fn audit_events(
     State(state): State<AppState>,
+    Query(query): Query<AuditEventsQueryParams>,
 ) -> Result<Json<Vec<fa_core::AuditEvent>>, (StatusCode, Json<serde_json::Value>)> {
-    state.audit_sink.snapshot().map(Json).map_err(|error| {
+    state
+        .audit_sink
+        .query(&query.into())
+        .map(Json)
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": error.to_string(),
+                })),
+            )
+        })
+}
+
+async fn task_audit_events(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    Query(query): Query<AuditEventsQueryParams>,
+) -> Result<Json<Vec<fa_core::AuditEvent>>, (StatusCode, Json<serde_json::Value>)> {
+    let query = AuditEventQuery {
+        task_id: Some(task_id),
+        approval_id: query.approval_id,
+        correlation_id: query.correlation_id,
+        kind: query.kind,
+    };
+
+    state.audit_sink.query(&query).map(Json).map_err(|error| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
@@ -285,6 +332,10 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/tasks/intake", post(intake_task))
         .route("/api/v1/tasks/plan", post(plan_task))
         .route("/api/v1/tasks/{task_id}", get(get_task))
+        .route(
+            "/api/v1/tasks/{task_id}/audit-events",
+            get(task_audit_events),
+        )
         .route("/api/v1/tasks/{task_id}/approve", post(approve_task))
         .route("/api/v1/tasks/{task_id}/resubmit", post(resubmit_task))
         .route("/api/v1/tasks/{task_id}/execute", post(execute_task))
@@ -664,5 +715,99 @@ mod tests {
         assert_eq!(approve_response.status(), StatusCode::OK);
         let approve_json = json_body(approve_response).await;
         assert_eq!(approve_json["planned_task"]["task"]["status"], "approved");
+    }
+
+    #[tokio::test]
+    async fn audit_events_support_filtering_and_task_replay() {
+        let app = app(build_state().expect("state should build"));
+
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/tasks/intake")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-intake-004")
+                    .body(Body::from(high_risk_request()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("intake should succeed");
+
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/approve"))
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .header("x-correlation-id", "itest-approve-004")
+                    .body(Body::from(
+                        r#"{
+                            "decided_by":{"id":"worker_2001","display_name":"Chen QE","role":"Quality Engineer"},
+                            "approved":true,
+                            "comment":"Proceed to execution"
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("approval should succeed");
+
+        let correlation_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/audit/events?correlation_id=itest-approve-004")
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("correlation query should succeed");
+        assert_eq!(correlation_response.status(), StatusCode::OK);
+        let correlation_json = json_body(correlation_response).await;
+        let correlation_events = correlation_json.as_array().expect("audit list");
+        assert_eq!(correlation_events.len(), 2);
+        assert!(correlation_events
+            .iter()
+            .all(|event| event["correlation_id"] == "itest-approve-004"));
+
+        let task_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/tasks/{TASK_ID}/audit-events"))
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("task replay should succeed");
+        assert_eq!(task_response.status(), StatusCode::OK);
+        let task_json = json_body(task_response).await;
+        let task_events = task_json.as_array().expect("audit list");
+        assert!(task_events.len() >= 8);
+        assert!(task_events.iter().all(|event| event["task_id"] == TASK_ID));
+
+        let kind_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/v1/audit/events?task_id={TASK_ID}&kind=approval_requested"
+                    ))
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("kind query should succeed");
+        assert_eq!(kind_response.status(), StatusCode::OK);
+        let kind_json = json_body(kind_response).await;
+        let kind_events = kind_json.as_array().expect("audit list");
+        assert_eq!(kind_events.len(), 1);
+        assert_eq!(kind_events[0]["kind"], "approval_requested");
     }
 }

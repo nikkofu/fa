@@ -2,13 +2,14 @@
 
 ## 1. 目的
 
-本设计文档固化 `M1-W01` 到 `M1-W05` 的最小设计结论，为后续编码提供一致边界：
+本设计文档固化 `M1-W01` 到 `M1-W08` 的最小设计结论，为后续编码提供一致边界：
 
 - 任务生命周期模型
 - 审批生命周期模型
 - connector read-only 抽象
 - audit event 最小模型
 - task repository abstraction
+- audit replay query baseline
 
 ## 2. 任务生命周期
 
@@ -111,6 +112,8 @@ trait:
 - `AuditActor`
 - `AuditEvent`
 - `AuditSink`
+- `AuditEventQuery`
+- `AuditStore`
 
 ### 5.3 首批事件
 
@@ -128,6 +131,7 @@ trait:
 - audit 接口先抽象，持久化实现后续单独演进
 - event 必须允许挂靠 `task_id`、`approval_id`、`correlation_id`
 - actor 必须区分 human / agent / system
+- audit 查询必须至少支持 `task_id`、`correlation_id`、`kind` 这些运行主键
 
 ## 6. Task Repository 抽象
 
@@ -165,6 +169,7 @@ trait:
 - 生命周期 API：
   - `POST /api/v1/tasks/intake`
   - `GET /api/v1/tasks/{task_id}`
+  - `GET /api/v1/tasks/{task_id}/audit-events`
   - `POST /api/v1/tasks/{task_id}/approve`
   - `POST /api/v1/tasks/{task_id}/resubmit`
   - `POST /api/v1/tasks/{task_id}/execute`
@@ -176,7 +181,7 @@ trait:
 
 基于本设计，下一步实现顺序应为：
 
-1. 为 repository 增加持久化实现候选
-2. 扩展修订元数据、审批 SLA 与异常路径
-3. 为 connector 和 audit 增加更完整的契约测试
+1. 引入审计回放视图和更完整的查询语义
+2. 为 repository 增加数据库级持久化实现候选
+3. 扩展修订元数据、审批 SLA 与异常路径
 4. 冻结首条试运行 workflow 规格
