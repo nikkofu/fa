@@ -2,7 +2,9 @@
 
 FA 是一个面向生产制造型企业的 Agentic AI 协同平台，目标是让 AI、Agent、企业系统、人员与设备在统一治理框架下协同工作。
 
-当前仓库为 `v0.1.0` 起步版本，采用 Rust 作为核心实现语言，先建立可扩展的领域模型、任务编排核心与 HTTP 服务底座，再逐步接入企业业务系统与工厂边缘场景。
+当前仓库已发布 `v0.2.0`，采用 Rust 作为核心实现语言，先建立可扩展的领域模型、任务编排核心与 HTTP 服务底座，再逐步接入企业业务系统与工厂边缘场景。
+
+本次版本说明见 [CHANGELOG.md](CHANGELOG.md) 与 [docs/release/v0.2.0-release-notes.md](docs/release/v0.2.0-release-notes.md)。
 
 ## 为什么现在做
 
@@ -55,7 +57,9 @@ make fmt
 make lint
 make test
 make smoke
+make smoke-sandbox
 make release-check
+make release-check-sandbox
 make run
 ```
 
@@ -68,7 +72,7 @@ cargo run -p fa-server
 启用文件型本地持久化模式：
 
 ```bash
-FA_DATA_DIR=/tmp/fa-data cargo run -p fa-server
+FA_DATA_DIR="$(pwd)/sandbox/fa-data" cargo run -p fa-server
 ```
 
 启用 SQLite 本地数据库模式：
@@ -87,7 +91,7 @@ FA_SERVER_ADDR=0.0.0.0:8000
 
 - `FA` 默认占用 `8000`
 - 如本机已有其他项目使用 `8000`，通过 `FA_SERVER_ADDR` 覆盖，不要直接改代码默认值
-- 端口分配与冲突规避说明见 [docs/development/local-environment.md](/Users/admin/Documents/WORK/ai/fa/docs/development/local-environment.md)
+- 端口分配与冲突规避说明见 [docs/development/local-environment.md](docs/development/local-environment.md)
 - 如需在本地保留任务与审计历史，可通过 `FA_DATA_DIR` 启用文件模式，或通过 `FA_SQLITE_DB_PATH` 启用 SQLite 模式
 
 运行时存储选择顺序：
@@ -101,6 +105,8 @@ FA_SERVER_ADDR=0.0.0.0:8000
 - SQLite 模式当前通过本机 `sqlite3` CLI 建立结构化本地持久化基线
 - SQLite 基线用于本地试运行、演示和耐久性验证，不等同于最终企业级数据库方案
 - 为避免与其他本地项目互相污染，`FA_SQLITE_DB_PATH` 应使用独立路径，不要与其他服务共用数据库文件
+- 项目内 `sandbox/` 目录保留给受限环境下的本地数据、smoke 工件和临时验证资产
+- `make smoke-sandbox` 使用进程内 HTTP 路由验证，不依赖本地 TCP 监听，适合沙箱或受限执行环境
 
 ## API 起步接口
 
@@ -199,9 +205,28 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 
 说明：
 
-- `tasks/intake` 现在会返回 `correlation_id`、`planned_task`、`context_reads` 和 `evidence`
+- `tasks/intake` 现在会返回 `correlation_id`、`planned_task`、`context_reads`、`evidence`、`follow_up_items`、`follow_up_summary`、`handoff_receipt`、`handoff_receipt_summary`、`alert_cluster_drafts` 和 `alert_triage_summary`
 - `context_reads` 由当前内置的 mock `MES` / mock `CMMS` connector 生成
 - `evidence` 是从 connector 读取结果提炼出的结构化任务证据快照
+- `shift handoff` 与 `alert triage` 请求现在都会受控生成 1 条 seeded `follow_up_item` draft，并返回非零 `follow_up_summary`
+- `shift handoff` 与 `alert triage` 请求现在都可通过显式 `follow-up-items/{follow_up_id}/accept-owner` action 把 seeded `follow_up_item` 从 `draft` 推进到 `accepted`
+- `GET /api/v1/follow-up-items` 现在会跨任务聚合返回 follow-up owner queue，并支持 `task_id / source_kind / status / owner_id / owner_role / overdue_only / blocked_only / escalation_required / due_before / risk / priority` 过滤
+- `GET /api/v1/follow-up-monitoring` 现在会在同一组过滤条件下返回最小 follow-up SLA monitoring 聚合视图
+- `follow_up_items` 与 `follow_up_summary` 当前已进入任务详情 contract，其他场景仍保持空数组和零值汇总
+- `shift handoff` 请求现在会受控生成 1 条 seeded `handoff_receipt` draft，并关联已生成的 follow-up item
+- `shift handoff` 请求现在可通过显式 `handoff-receipt/acknowledge` action 把 receipt 从 `published` 推进到 `acknowledged / acknowledged_with_exceptions`
+- `shift handoff` 请求现在可通过显式 `handoff-receipt/escalate` action 把 receipt 从 `acknowledged_with_exceptions` 推进到 `escalated`
+- `GET /api/v1/handoff-receipts` 现在会跨任务聚合返回 cross-shift receipt queue，并支持 `task_id / shift_id / receipt_status / receiving_role / receiving_actor_id / overdue_only / has_exceptions / escalated_only` 过滤
+- `GET /api/v1/handoff-receipt-monitoring` 现在会在同一组过滤条件下返回最小 handoff receipt monitoring 聚合视图
+- `handoff_receipt` 与 `handoff_receipt_summary` 当前已进入任务详情 contract，其他场景默认返回 `null` 和零值汇总
+- `alert triage` 请求现在会受控生成 1 条 seeded `alert_cluster_draft`，并返回非零 `alert_triage_summary`
+- `alert_cluster_drafts` 现在会推断 `source_system / line_id / triage_label / recommended_owner_role / cluster window`
+- `alert triage` 现在除了 `repeated_alert_review` 外，还支持 `scada` 场景下的 `sustained_threshold_review` draft 形态
+- `GET /api/v1/alert-clusters` 现在会跨任务聚合返回 `alert cluster` queue，并支持 `task_id / cluster_status / source_system / equipment_id / line_id / severity_band / triage_label / follow_up_owner_id / unaccepted_follow_up_only / follow_up_escalation_required / escalation_candidate / window_from / window_to / open_only` 过滤
+- `GET /api/v1/alert-clusters` 现在会在每条 cluster item 上返回最小 `linked_follow_up` 摘要，直接暴露 follow-up 数量、接单状态、owner 和最高优先级 SLA 状态
+- `GET /api/v1/alert-cluster-monitoring` 现在会在同一组过滤条件下返回最小 alert cluster monitoring 聚合视图，并复用 linked follow-up triage 过滤
+- `GET /api/v1/alert-cluster-monitoring` 现在还会直接返回 `linked/unlinked/accepted/unaccepted/escalation` 五组 linked follow-up backlog 汇总字段与 `follow_up_coverage / follow_up_sla_status` bucket
+- `alert_cluster_drafts` 与 `alert_triage_summary` 当前已进入任务详情 contract，其他场景仍返回空数组和零值汇总
 - `planned_task.task.plan.governance` 现在会返回责任矩阵、审批策略和 fallback actions
 - 审计事件可通过 `/api/v1/audit/events` 查看，也支持 `task_id / correlation_id / kind / approval_id` 过滤
 - 单任务 evidence 可通过 `/api/v1/tasks/{task_id}/evidence` 查看
@@ -216,6 +241,169 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/intake \
 curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0 | jq
 ```
 
+查看跨任务 follow-up queue：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/follow-up-items?owner_id=worker_1101" | jq
+```
+
+说明：
+
+- 第一版 queue 会跨任务聚合所有已持久化的 `follow_up_item`
+- 当前支持 `task_id / source_kind / status / owner_id / owner_role / overdue_only / blocked_only / escalation_required / due_before / risk / priority` 过滤
+- 默认按 `effective_sla_status -> due_at -> task_priority -> updated_at` 排序
+- 当前 queue 直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 projection 表
+
+查看高风险且需要升级的 follow-up queue：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/follow-up-items?escalation_required=true&risk=high&priority=expedited" | jq
+```
+
+查看 follow-up SLA monitoring 视图：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/follow-up-monitoring?risk=high" | jq
+```
+
+说明：
+
+- monitor 复用 `GET /api/v1/follow-up-items` 的过滤语义
+- 当前返回 `total_items / open_items / accepted_items / unaccepted_items / blocked_items / overdue_items / escalation_required_items / next_due_at`
+- 当前还会返回 `source_kind / owner_role / effective_sla_status / task_risk / task_priority` 五组最小 bucket 统计
+- 第一版 monitor 同样直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 dedicated projection
+
+查看跨班次 handoff receipt queue：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/handoff-receipts?overdue_only=true" | jq
+```
+
+说明：
+
+- 第一版 receipt queue 会跨任务聚合所有已持久化的 `shift handoff` `handoff_receipt`
+- 当前支持 `task_id / shift_id / receipt_status / receiving_role / receiving_actor_id / overdue_only / has_exceptions / escalated_only` 过滤
+- 默认按 `effective_status -> required_ack_by -> task_priority -> updated_at` 排序
+- `effective_status` 会把超时未确认的 `published` receipt 读时收敛成 `expired`
+- 当前 queue 直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 receipt projection 表
+
+查看 handoff receipt monitoring 视图：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/handoff-receipt-monitoring?escalated_only=true" | jq
+```
+
+说明：
+
+- monitor 复用 `GET /api/v1/handoff-receipts` 的过滤语义
+- 当前返回 `total_receipts / open_receipts / acknowledged_receipts / unacknowledged_receipts / overdue_receipts / exception_receipts / escalated_receipts / next_ack_due_at`
+- 当前还会返回 `effective_status / receiving_role / ack_window / task_risk / task_priority` 五组最小 bucket 统计
+- `ack_window_counts` 当前按 `overdue / due_within_30m / due_within_2h / future / no_deadline` 收敛未确认 receipt 的确认窗口
+- 第一版 monitor 同样直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 dedicated projection
+
+查看跨任务 alert cluster queue：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/alert-clusters?escalation_candidate=true&open_only=true" | jq
+```
+
+说明：
+
+- 第一版 alert cluster queue 会跨任务聚合所有已持久化的 `alert_cluster_draft`
+- 当前支持 `task_id / cluster_status / source_system / equipment_id / line_id / severity_band / triage_label / follow_up_owner_id / unaccepted_follow_up_only / follow_up_escalation_required / escalation_candidate / window_from / window_to / open_only` 过滤
+- 默认按 `escalation_candidate -> cluster_status -> severity_band -> active_or_recent_window -> updated_at` 排序
+- 当前每个 cluster item 都会携带 `linked_follow_up.total_items / open_items / accepted_items / unaccepted_items / accepted_owner_ids / worst_effective_sla_status`
+- linkage 优先匹配显式 `source_kind=alert_cluster + cluster_id`，并兼容现有单 cluster task 上的 `alert_triage` follow-up
+- `follow_up_owner_id` 可按已 accepted 的实际 owner 过滤 cluster backlog
+- `unaccepted_follow_up_only=true` 可只返回仍有 follow-up 未被 accepted 的 cluster
+- `follow_up_escalation_required=true` 可只返回 linked follow-up 已进入升级态的 cluster
+- `window_from / window_to` 当前按 cluster window overlap 语义过滤
+- 当前 queue 直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 alert-cluster projection 表
+
+查看 alert cluster monitoring 视图：
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/alert-cluster-monitoring?source_system=scada" | jq
+```
+
+说明：
+
+- monitor 复用 `GET /api/v1/alert-clusters` 的过滤语义
+- 当前返回 `total_clusters / open_clusters / escalation_candidate_clusters / high_severity_clusters / active_window_clusters / stale_window_clusters / next_window_end_at`
+- 当前还会返回 `cluster_status / source_system / severity_band / triage_label / owner_role / window_state / task_risk / task_priority` 八组最小 bucket 统计
+- 当前还会返回 `linked_follow_up_clusters / unlinked_follow_up_clusters / accepted_follow_up_clusters / unaccepted_follow_up_clusters / follow_up_escalation_clusters`
+- 当前还会返回 `follow_up_coverage_counts / follow_up_sla_status_counts` 两组 linked follow-up backlog bucket
+- monitor 现在也支持 `follow_up_owner_id / unaccepted_follow_up_only / follow_up_escalation_required` 这些 linked follow-up triage 过滤
+- `window_state_counts` 当前按 `active / stale / future` 收敛 cluster window 所处状态
+- 第一版 monitor 同样直接复用内存 / 文件 / SQLite repository 里的 `TrackedTaskState` 扫描，不额外引入 dedicated projection
+
+接手一条 follow-up 待办：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f1/follow-up-items/fu_72c8f5d00f084e0ca8c41d4dc51a25f1_handoff_review/accept-owner \
+  -H "x-correlation-id: demo-follow-up-accept-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_1101",
+      "display_name": "Zhang Incoming",
+      "role": "Incoming Shift Supervisor"
+    },
+    "note": "Incoming shift supervisor accepts remaining work ownership."
+  }' | jq
+```
+
+说明：
+
+- 该 action 只适用于任务详情中已存在的 `follow_up_item`
+- 第一版只允许 `draft -> accepted`
+- 如果 item 带有 `recommended_owner_role`，`actor.role` 会按该角色强校验
+- `shift handoff` receipt summary 会同步更新 `unaccepted_follow_up_count`
+
+确认交接回执：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f1/handoff-receipt/acknowledge \
+  -H "x-correlation-id: demo-handoff-ack-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_1101",
+      "display_name": "Zhang Incoming",
+      "role": "Incoming Shift Supervisor"
+    },
+    "exception_note": null
+  }' | jq
+```
+
+说明：
+
+- 该 action 只适用于已有 `handoff_receipt` 的 `shift handoff` 任务
+- `actor.role` 会按 `receiving_role` 强校验，当前要求 `incoming_shift_supervisor`
+- 如果提供 `exception_note`，receipt 会进入 `acknowledged_with_exceptions`
+
+升级存在异议的交接回执：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f1/handoff-receipt/escalate \
+  -H "x-correlation-id: demo-handoff-escalate-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actor": {
+      "id": "worker_1001",
+      "display_name": "Liu Supervisor",
+      "role": "Production Supervisor"
+    },
+    "note": "Escalate to day-shift review before startup release."
+  }' | jq
+```
+
+说明：
+
+- 该 action 只允许 `acknowledged_with_exceptions -> escalated`
+- `actor.role` 会按发送侧 accountable 角色强校验；当前 seeded `shift handoff` receipt 要求 `production_supervisor`
+- `exception_note` 会保留在 receipt 上，便于 review / escalation 回放
+
 批准待审批任务：
 
 ```bash
@@ -225,13 +413,18 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
   -d '{
     "decided_by": {
       "id": "worker_2001",
-      "display_name": "Chen QE",
-      "role": "Quality Engineer"
+      "display_name": "Wang Safety",
+      "role": "Safety Officer"
     },
     "approved": true,
     "comment": "Proceed to execution"
   }' | jq
 ```
+
+说明：
+
+- `approve` 现在会按 `planned_task.task.plan.governance.approval_strategy.required_role` 强校验 `decided_by.role`
+- 当前高风险示例任务要求的审批角色是 `safety_officer`
 
 驳回后重新发起审批：
 
@@ -304,19 +497,21 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - `CHANGELOG.md` 记录版本说明
 - GitHub Actions 负责 `fmt / clippy / test / release`
 - `scripts/smoke_v0_2_0.sh` 和 CI 负责主 workflow 的 smoke gate
+- `scripts/smoke_v0_2_0_sandbox.sh` 提供受限环境下的 socket-free smoke 路径
 - Release 通过 `v*` tag 触发
 
 详细说明见：
 
-- [docs/architecture.md](/Users/admin/Documents/WORK/ai/fa/docs/architecture.md)
-- [docs/project-charter.md](/Users/admin/Documents/WORK/ai/fa/docs/project-charter.md)
-- [docs/roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md)
-- [docs/release-process.md](/Users/admin/Documents/WORK/ai/fa/docs/release-process.md)
-- [docs/governance/README.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/README.md)
-- [docs/planning/README.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/README.md)
-- [docs/progress/README.md](/Users/admin/Documents/WORK/ai/fa/docs/progress/README.md)
-- [docs/journal/README.md](/Users/admin/Documents/WORK/ai/fa/docs/journal/README.md)
-- [docs/qa/README.md](/Users/admin/Documents/WORK/ai/fa/docs/qa/README.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/project-charter.md](docs/project-charter.md)
+- [docs/roadmap.md](docs/roadmap.md)
+- [docs/release-process.md](docs/release-process.md)
+- [docs/release/v0.2.0-release-notes.md](docs/release/v0.2.0-release-notes.md)
+- [docs/governance/README.md](docs/governance/README.md)
+- [docs/planning/README.md](docs/planning/README.md)
+- [docs/progress/README.md](docs/progress/README.md)
+- [docs/journal/README.md](docs/journal/README.md)
+- [docs/qa/README.md](docs/qa/README.md)
 
 ## 当前状态
 
@@ -333,9 +528,45 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - 按任务和链路主键查询的审计回放能力
 - `FA_SQLITE_DB_PATH` 驱动的 SQLite task / audit 持久化基线
 - 首条 pilot workflow 候选比较与规格定义基线
+- 制造行业 Agentic AI 场景全景与场景分层优先级基线
+- 第二条候选 workflow `质量偏差隔离与处置建议` specification baseline
+- 第二条候选质量 workflow 的 connector / evidence / governance / API 对齐清单 baseline
+- 面向制造现场日常运营的高频、高优先级 Agentic 功能优先级地图 baseline
+- 高频日常协同 workflow `班次交接摘要与待办提取` specification baseline
+- 高频事件协同 workflow `产线告警聚合与异常分诊` specification baseline
+- follow-up / owner / due date / SLA 通用模型对齐清单 baseline
+- follow-up / SLA read model 与 query direction note baseline
+- follow-up task read model implementation cut note
+- follow-up task detail schema cut baseline
+- seeded follow-up draft baseline for `shift handoff`
+- seeded follow-up draft baseline for `alert triage`
+- explicit follow-up owner acceptance action baseline for seeded task-scoped items
+- cross-task follow-up owner queue baseline via `GET /api/v1/follow-up-items`
+- operational triage filters for follow-up queue via `blocked_only / escalation_required / due_before / risk / priority`
+- follow-up SLA monitoring baseline via `GET /api/v1/follow-up-monitoring`
+- shift handoff workflow connector / evidence / SLA 对齐清单 baseline
+- shift handoff receipt / acknowledgement direction note baseline
+- shift handoff receipt task read model implementation cut note
+- shift handoff receipt task detail schema cut baseline
+- seeded handoff receipt draft baseline for `shift handoff`
+- explicit handoff receipt acknowledgement action baseline for `shift handoff`
+- cross-shift handoff receipt queue baseline via `GET /api/v1/handoff-receipts`
+- handoff receipt monitoring baseline via `GET /api/v1/handoff-receipt-monitoring`
+- alert triage workflow connector / evidence / governance / event-ingestion 对齐清单 baseline
+- alert triage alert-cluster / event-ingestion direction note baseline
+- alert triage task read model implementation cut note
+- alert triage task detail schema cut baseline
+- seeded alert cluster draft baseline for `alert triage`
+- richer alert cluster source / line / window inference baseline for `alert triage`
+- second `sustained_threshold_review` alert cluster draft mode baseline for `scada` triage requests
+- alert cluster queue linked follow-up summary baseline for owner and SLA visibility
+- alert cluster linked follow-up triage filters baseline for queue and monitoring reads
+- alert cluster monitoring linked follow-up aggregates baseline for backlog coverage and SLA visibility
+- quality `QMS` mock connector baseline note
 - 结构化 task evidence snapshot 与任务级 evidence 查询接口
 - `v0.2.0` 测试清单、发布清单与可重复 smoke script 基线
 - workflow responsibility matrix 与 approval strategy 基线
+- 面向受限环境的 sandbox-safe smoke 路径与项目内 `sandbox/` 运行目录
 - 内存审计事件流与 `correlation_id` 贯通
 - 服务层生命周期集成测试
 - 基础测试
@@ -344,21 +575,23 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 
 下一步优先级：
 
-1. 准备 `v0.2.0` 版本号、tag 和最终 release note
-2. 为 pilot workflow 增加更严格的审批角色校验与策略约束
-3. 评估 SQLite 向更强数据库后端的迁移路径
-4. 扩展 evidence、审批 SLA 和异常路径表达
+1. 评估把 `alert-clusters / alert-cluster-monitoring` 从 repository-scan 读层推进到 dedicated projection / backlog aging slices
+2. 评估把 `alert-clusters / alert-cluster-monitoring` 里的 `linked_follow_up` 摘要、triage filters 和 monitoring aggregates 推进到 dedicated projection / backlog aging / escalation slices
+3. 评估是否为 `alert-cluster-monitoring` 增加 accepted owner / owner-load 聚合维度
+4. 评估把 `follow-up-monitoring` 从 repository-scan 聚合推进到 dedicated projection / backlog aging slices
+5. 评估把 `handoff-receipt-monitoring` 从 repository-scan 聚合推进到 dedicated projection / aging trend slices
+6. 评估把 mock `QMS` baseline 从设计说明推进到默认 registry 和 read plan 代码实现的切口
 
 ## 团队工作流
 
 项目团队的标准工作流程已经固化在仓库中，后续需求、设计、开发、测试、发布和试运行都按这些文档执行：
 
-- [docs/governance/team-operating-model.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/team-operating-model.md)
-- [docs/governance/delivery-lifecycle.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/delivery-lifecycle.md)
-- [docs/governance/governance-controls.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/governance-controls.md)
+- [docs/governance/team-operating-model.md](docs/governance/team-operating-model.md)
+- [docs/governance/delivery-lifecycle.md](docs/governance/delivery-lifecycle.md)
+- [docs/governance/governance-controls.md](docs/governance/governance-controls.md)
 
 ## 当前执行计划
 
 当前已经把 `M1` 的执行计划细化到工作包、责任、依赖和验收层，后续实施以此为准：
 
-- [docs/planning/m1-execution-plan.md](/Users/admin/Documents/WORK/ai/fa/docs/planning/m1-execution-plan.md)
+- [docs/planning/m1-execution-plan.md](docs/planning/m1-execution-plan.md)

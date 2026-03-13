@@ -20,8 +20,15 @@ pub use connectors::{
 };
 pub use evidence::TaskEvidence;
 pub use orchestrator::{
-    ApprovalActionRequest, CompleteTaskRequest, ExecuteTaskRequest, FailTaskRequest,
-    OrchestrationError, ResubmitTaskRequest, TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
+    AcceptFollowUpOwnerRequest, AcknowledgeHandoffReceiptRequest, AlertClusterDraftView,
+    AlertClusterLinkedFollowUpView, AlertClusterMonitoringBucket, AlertClusterMonitoringView,
+    AlertClusterQueueItemView, AlertClusterQueueQuery, AlertTriageSummary, ApprovalActionRequest,
+    CompleteTaskRequest, EscalateHandoffReceiptRequest, ExecuteTaskRequest, FailTaskRequest,
+    FollowUpItemView, FollowUpMonitoringBucket, FollowUpMonitoringView, FollowUpQueueItemView,
+    FollowUpQueueQuery, FollowUpSummary, HandoffReceiptMonitoringBucket,
+    HandoffReceiptMonitoringView, HandoffReceiptQueueItemView, HandoffReceiptQueueQuery,
+    HandoffReceiptSummary, HandoffReceiptView, OrchestrationError, ResubmitTaskRequest,
+    TaskIntakeResult, TrackedTaskState, WorkOrchestrator,
 };
 pub use repository::{
     FileTaskRepository, InMemoryTaskRepository, SqliteTaskRepository, TaskRepository,

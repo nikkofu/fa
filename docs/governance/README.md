@@ -18,22 +18,22 @@
 
 ## 文档清单
 
-- [team-operating-model.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/team-operating-model.md)
+- [team-operating-model.md](team-operating-model.md)
   定义团队角色、职责、RACI、会议节奏、沟通规则和协作约定。
-- [delivery-lifecycle.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/delivery-lifecycle.md)
+- [delivery-lifecycle.md](delivery-lifecycle.md)
   定义从需求进入到发布关闭的端到端工作流、状态流转、阶段出口和 DoR/DoD。
-- [governance-controls.md](/Users/admin/Documents/WORK/ai/fa/docs/governance/governance-controls.md)
+- [governance-controls.md](governance-controls.md)
   定义范围、进度、质量、风险、变更、配置、发布和状态汇报控制机制。
 
 ## 与现有文档的关系
 
-- [project-charter.md](/Users/admin/Documents/WORK/ai/fa/docs/project-charter.md)
+- [project-charter.md](../project-charter.md)
   定义项目使命、目标、里程碑和高层角色。
-- [roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md)
+- [roadmap.md](../roadmap.md)
   定义版本目标和阶段性产出。
-- [architecture.md](/Users/admin/Documents/WORK/ai/fa/docs/architecture.md)
+- [architecture.md](../architecture.md)
   定义技术架构与模式选择。
-- [release-process.md](/Users/admin/Documents/WORK/ai/fa/docs/release-process.md)
+- [release-process.md](../release-process.md)
   定义版本发布动作与检查点。
 
 治理文档解决的是“怎么组织团队把这些目标落地”的问题。

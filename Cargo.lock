@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "fa-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "fa-domain"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -229,10 +229,11 @@ dependencies = [
 
 [[package]]
 name = "fa-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
+ "chrono",
  "fa-core",
  "fa-domain",
  "serde",

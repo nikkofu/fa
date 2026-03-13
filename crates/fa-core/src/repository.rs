@@ -19,6 +19,8 @@ pub trait TaskRepository: Send + Sync {
         task_id: Uuid,
     ) -> std::result::Result<Option<TrackedTaskState>, OrchestrationError>;
 
+    fn list(&self) -> std::result::Result<Vec<TrackedTaskState>, OrchestrationError>;
+
     fn save(
         &self,
         state: TrackedTaskState,
@@ -56,6 +58,15 @@ impl TaskRepository for InMemoryTaskRepository {
                 OrchestrationError::TaskRepository("in-memory repository lock poisoned".to_string())
             })
             .map(|tasks| tasks.get(&task_id).cloned())
+    }
+
+    fn list(&self) -> std::result::Result<Vec<TrackedTaskState>, OrchestrationError> {
+        self.tasks
+            .lock()
+            .map_err(|_| {
+                OrchestrationError::TaskRepository("in-memory repository lock poisoned".to_string())
+            })
+            .map(|tasks| tasks.values().cloned().collect())
     }
 
     fn save(
@@ -161,6 +172,46 @@ impl TaskRepository for FileTaskRepository {
             ))
         })?;
         Ok(Some(state))
+    }
+
+    fn list(&self) -> std::result::Result<Vec<TrackedTaskState>, OrchestrationError> {
+        let _guard = self.write_lock.lock().map_err(|_| {
+            OrchestrationError::TaskRepository("file repository lock poisoned".to_string())
+        })?;
+        let mut states = Vec::new();
+
+        for entry in fs::read_dir(&self.tasks_dir).map_err(|error| {
+            OrchestrationError::TaskRepository(format!(
+                "failed to read task repository directory {}: {error}",
+                self.tasks_dir.display()
+            ))
+        })? {
+            let entry = entry.map_err(|error| {
+                OrchestrationError::TaskRepository(format!(
+                    "failed to read task repository directory entry: {error}"
+                ))
+            })?;
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+
+            let bytes = fs::read(&path).map_err(|error| {
+                OrchestrationError::TaskRepository(format!(
+                    "failed to read task state file {}: {error}",
+                    path.display()
+                ))
+            })?;
+            let state = serde_json::from_slice(&bytes).map_err(|error| {
+                OrchestrationError::TaskRepository(format!(
+                    "failed to decode task state file {}: {error}",
+                    path.display()
+                ))
+            })?;
+            states.push(state);
+        }
+
+        Ok(states)
     }
 
     fn save(
@@ -291,6 +342,29 @@ impl TaskRepository for SqliteTaskRepository {
         })
     }
 
+    fn list(&self) -> std::result::Result<Vec<TrackedTaskState>, OrchestrationError> {
+        let output = self
+            .database
+            .execute("SELECT payload_json FROM tasks ORDER BY updated_at DESC, task_id;")
+            .map_err(|error| OrchestrationError::TaskRepository(error.to_string()))?;
+
+        if output.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        output
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str::<TrackedTaskState>(line).map_err(|error| {
+                    OrchestrationError::TaskRepository(format!(
+                        "failed to decode sqlite task state row: {error}"
+                    ))
+                })
+            })
+            .collect()
+    }
+
     fn save(
         &self,
         state: TrackedTaskState,
@@ -317,6 +391,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::{AlertTriageSummary, FollowUpSummary, HandoffReceiptSummary};
 
     fn temp_dir(prefix: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("{prefix}-{}", Uuid::new_v4()));
@@ -375,6 +450,12 @@ mod tests {
             },
             context_reads: Vec::new(),
             evidence: Vec::new(),
+            follow_up_items: Vec::new(),
+            follow_up_summary: FollowUpSummary::default(),
+            handoff_receipt: None,
+            handoff_receipt_summary: HandoffReceiptSummary::default(),
+            alert_cluster_drafts: Vec::new(),
+            alert_triage_summary: AlertTriageSummary::default(),
         }
     }
 
@@ -409,6 +490,60 @@ mod tests {
         let saved = repository.save(state).expect("save should succeed");
 
         assert_eq!(saved.correlation_id, "repo-002");
+    }
+
+    #[test]
+    fn in_memory_repository_lists_tracked_states() {
+        let repository = InMemoryTaskRepository::default();
+        let first = tracked_state(Uuid::new_v4());
+        let second = tracked_state(Uuid::new_v4());
+
+        repository
+            .create(first.clone())
+            .expect("first create should succeed");
+        repository
+            .create(second.clone())
+            .expect("second create should succeed");
+
+        let listed = repository.list().expect("list should succeed");
+
+        assert_eq!(listed.len(), 2);
+        assert!(listed
+            .iter()
+            .any(|state| state.planned_task.task.id == first.planned_task.task.id));
+        assert!(listed
+            .iter()
+            .any(|state| state.planned_task.task.id == second.planned_task.task.id));
+    }
+
+    #[test]
+    fn tracked_state_decodes_when_follow_up_fields_are_missing() {
+        let task_id = Uuid::new_v4();
+        let state = tracked_state(task_id);
+        let mut encoded =
+            serde_json::to_value(&state).expect("tracked state should encode to json");
+        let object = encoded
+            .as_object_mut()
+            .expect("tracked state should encode to object");
+        object.remove("follow_up_items");
+        object.remove("follow_up_summary");
+        object.remove("handoff_receipt");
+        object.remove("handoff_receipt_summary");
+        object.remove("alert_cluster_drafts");
+        object.remove("alert_triage_summary");
+
+        let decoded: TrackedTaskState =
+            serde_json::from_value(encoded).expect("legacy tracked state should decode");
+
+        assert!(decoded.follow_up_items.is_empty());
+        assert_eq!(decoded.follow_up_summary, FollowUpSummary::default());
+        assert!(decoded.handoff_receipt.is_none());
+        assert_eq!(
+            decoded.handoff_receipt_summary,
+            HandoffReceiptSummary::default()
+        );
+        assert!(decoded.alert_cluster_drafts.is_empty());
+        assert_eq!(decoded.alert_triage_summary, AlertTriageSummary::default());
     }
 
     #[test]

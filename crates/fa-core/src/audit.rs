@@ -24,6 +24,11 @@ pub enum AuditEventKind {
     ApprovalRejected,
     ApprovalExpired,
     ConnectorRead,
+    FollowUpOwnerAccepted,
+    HandoffPublished,
+    HandoffAcknowledged,
+    HandoffAcknowledgedWithExceptions,
+    HandoffReceiptEscalated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

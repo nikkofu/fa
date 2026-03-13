@@ -2,11 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SANDBOX_ROOT="${FA_SANDBOX_DIR:-$ROOT_DIR/sandbox}"
 ADDR="${FA_SERVER_ADDR:-127.0.0.1:8000}"
 HOST="${ADDR%:*}"
 PORT="${ADDR##*:}"
 USER_PROVIDED_DATA_DIR="${FA_DATA_DIR+x}"
-DATA_DIR="${FA_DATA_DIR:-/tmp/fa-v0.2.0-smoke-$RANDOM$RANDOM}"
+DATA_DIR="${FA_DATA_DIR:-$SANDBOX_ROOT/fa-v0.2.0-smoke-$RANDOM$RANDOM}"
 LOG_FILE="${FA_SMOKE_LOG_FILE:-$DATA_DIR/fa-server.log}"
 TASK_ID="${FA_SMOKE_TASK_ID:-72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0}"
 BINARY_PATH="$ROOT_DIR/target/debug/fa-server"
@@ -115,8 +116,8 @@ APPROVE_PAYLOAD=$(cat <<JSON
 {
   "decided_by": {
     "id": "worker_2001",
-    "display_name": "Chen QE",
-    "role": "Quality Engineer"
+    "display_name": "Wang Safety",
+    "role": "Safety Officer"
   },
   "approved": true,
   "comment": "Proceed to execution"

@@ -57,7 +57,7 @@ FA 当前支持三种本地运行模式：
 文件模式示例：
 
 ```bash
-FA_DATA_DIR=/tmp/fa-data cargo run -p fa-server
+FA_DATA_DIR="$(pwd)/sandbox/fa-data" cargo run -p fa-server
 ```
 
 SQLite 模式示例：
@@ -72,6 +72,7 @@ FA_SQLITE_DB_PATH=/tmp/fa-dev/fa.db cargo run -p fa-server
 - 设置 `FA_DATA_DIR` 后，任务状态会写入 `tasks/*.json`
 - 审计事件会写入 `audit-events.jsonl`
 - 该模式用于本地试运行和验证，不等同于数据库级持久化
+- 建议把项目级临时运行数据放在仓库根目录下的 `sandbox/` 中，便于受限环境执行和统一清理
 - 设置 `FA_SQLITE_DB_PATH` 后，任务与审计事件会写入同一个 SQLite 数据库文件
 - SQLite 模式当前依赖本机可执行的 `sqlite3` CLI
 - 为避免与其他项目发生数据污染，SQLite 数据文件应使用 FA 独立路径，例如 `/tmp/fa-dev/fa.db`
@@ -94,3 +95,11 @@ lsof -iTCP:8000 -sTCP:LISTEN
 ## 7. 后续约定
 
 后续如果增加前端、worker、mock connector server 或本地依赖服务，应继续在本目录下补充统一端口表，避免项目规模扩大后再次发生端口混乱。
+
+## 8. 沙箱环境补充
+
+当执行环境不允许本地进程监听 TCP 端口时：
+
+- 优先使用 `make smoke-sandbox`
+- 对应脚本会使用项目根目录下的 `sandbox/`
+- 该路径验证的是进程内 HTTP 路由和文件持久化主链，不替代真实 listener smoke 的发布门禁价值

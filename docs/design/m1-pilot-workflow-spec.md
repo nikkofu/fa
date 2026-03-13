@@ -30,7 +30,8 @@
 | --- | --- |
 | Production Supervisor | 发起任务，补充现场症状与业务影响 |
 | Maintenance Engineer | 审阅诊断建议，决定维护动作 |
-| Quality Engineer | 当异常可能影响质量时参与审批或升级 |
+| Safety Officer | 在高风险异常中承担正式审批责任 |
+| Quality Engineer | 当异常可能影响质量时提供会签意见或升级建议 |
 | FA Agent / Orchestrator | 读取上下文、生成建议、维持任务状态与审计 |
 | System Admin / Delivery Owner | 维护运行边界、回退策略和试运行配置 |
 
@@ -91,6 +92,8 @@ workflow 的输出应包括：
 - 质量影响排查
 
 则必须进入人工审批。
+
+在当前 `v0.2.0` 基线下，高风险温度漂移任务默认要求 `Safety Officer` 角色完成审批，其他角色不能直接代批。
 
 ### Step 5. 执行跟踪
 
@@ -186,7 +189,7 @@ workflow 的输出应包括：
 
 - workflow 级可视化视图
 - 与真实 CMMS 的受控写入草稿接口
-- 审批角色强校验与多级审批链
+- 多级审批链与更细粒度的升级路径
 
 ## 13. 试运行验收标准
 

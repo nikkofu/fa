@@ -5,3 +5,5 @@
 /.env
 /.env.local
 /.cargo
+/sandbox/*
+!/sandbox/.gitkeep

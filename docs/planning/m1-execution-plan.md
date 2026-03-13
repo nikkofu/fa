@@ -2,7 +2,7 @@
 
 ## 1. 计划目的
 
-本计划将 [roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md) 中 `v0.2.0` 和 [project-charter.md](/Users/admin/Documents/WORK/ai/fa/docs/project-charter.md) 中 `M1: Core orchestration prototype` 细化为一份可执行计划，用于指导接下来 2 到 4 周的实际工作。
+本计划将 [roadmap.md](../roadmap.md) 中 `v0.2.0` 和 [project-charter.md](../project-charter.md) 中 `M1: Core orchestration prototype` 细化为一份可执行计划，用于指导接下来 2 到 4 周的实际工作。
 
 本计划的目标不是覆盖所有制造场景，而是建立第一条可验证的“受治理编排底座”，让平台从“能规划”走向“能管理任务生命周期、审批链和只读集成原型”。
 
@@ -303,4 +303,4 @@
 
 当前设计基线文档：
 
-- [design/m1-lifecycle-and-abstractions.md](/Users/admin/Documents/WORK/ai/fa/docs/design/m1-lifecycle-and-abstractions.md)
+- [design/m1-lifecycle-and-abstractions.md](../design/m1-lifecycle-and-abstractions.md)

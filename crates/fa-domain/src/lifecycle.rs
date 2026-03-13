@@ -69,6 +69,11 @@ pub enum LifecycleError {
     RequestPlanMismatch,
     #[error("approval policy {0:?} does not require a human approval record")]
     ApprovalNotRequired(ApprovalPolicy),
+    #[error("approval requires role '{required_role}', got '{actual_role}'")]
+    ApprovalRoleMismatch {
+        required_role: String,
+        actual_role: String,
+    },
     #[error("execution plan is required before requesting approval")]
     MissingExecutionPlan,
     #[error("execution plan is required before auto-approval")]
@@ -219,6 +224,7 @@ impl ApprovalRecord {
         decided_by: ActorHandle,
         comment: impl Into<Option<String>>,
     ) -> Result<(), LifecycleError> {
+        self.ensure_decider_role(&decided_by)?;
         self.transition(ApprovalStatus::Approved)?;
         self.decided_by = Some(decided_by);
         self.comment = comment.into();
@@ -231,6 +237,7 @@ impl ApprovalRecord {
         decided_by: ActorHandle,
         comment: impl Into<Option<String>>,
     ) -> Result<(), LifecycleError> {
+        self.ensure_decider_role(&decided_by)?;
         self.transition(ApprovalStatus::Rejected)?;
         self.decided_by = Some(decided_by);
         self.comment = comment.into();
@@ -255,6 +262,18 @@ impl ApprovalRecord {
         }
 
         self.status = next;
+        Ok(())
+    }
+
+    fn ensure_decider_role(&self, decided_by: &ActorHandle) -> Result<(), LifecycleError> {
+        let actual_role = decided_by.normalized_role();
+        if actual_role != self.required_role {
+            return Err(LifecycleError::ApprovalRoleMismatch {
+                required_role: self.required_role.clone(),
+                actual_role,
+            });
+        }
+
         Ok(())
     }
 }
@@ -332,8 +351,8 @@ mod tests {
             .approve(
                 ActorHandle {
                     id: "worker_2001".to_string(),
-                    display_name: "Chen QE".to_string(),
-                    role: "Quality Engineer".to_string(),
+                    display_name: "Wang Safety".to_string(),
+                    role: "Safety Officer".to_string(),
                 },
                 Some("Proceed with diagnostic work".to_string()),
             )
@@ -386,5 +405,34 @@ mod tests {
             error,
             LifecycleError::ApprovalNotRequired(ApprovalPolicy::Auto)
         );
+    }
+
+    #[test]
+    fn approval_record_rejects_decision_from_wrong_role() {
+        let request = test_request();
+        let mut approval =
+            ApprovalRecord::pending(request.id, ApprovalPolicy::SafetyOfficer, request.initiator)
+                .expect("approval required");
+
+        let error = approval
+            .approve(
+                ActorHandle {
+                    id: "worker_2001".to_string(),
+                    display_name: "Chen QE".to_string(),
+                    role: "Quality Engineer".to_string(),
+                },
+                Some("Proceed with diagnostic work".to_string()),
+            )
+            .expect_err("mismatched role should be rejected");
+
+        assert_eq!(
+            error,
+            LifecycleError::ApprovalRoleMismatch {
+                required_role: "safety_officer".to_string(),
+                actual_role: "quality_engineer".to_string(),
+            }
+        );
+        assert_eq!(approval.status, ApprovalStatus::Pending);
+        assert!(approval.decided_by.is_none());
     }
 }

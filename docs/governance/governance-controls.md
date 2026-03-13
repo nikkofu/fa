@@ -10,8 +10,8 @@
 
 当前范围基线来源于：
 
-- [project-charter.md](/Users/admin/Documents/WORK/ai/fa/docs/project-charter.md)
-- [roadmap.md](/Users/admin/Documents/WORK/ai/fa/docs/roadmap.md)
+- [project-charter.md](../project-charter.md)
+- [roadmap.md](../roadmap.md)
 - 当前 milestone 承诺项
 
 ### 2.2 范围控制规则

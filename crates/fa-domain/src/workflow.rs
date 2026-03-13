@@ -27,6 +27,12 @@ pub struct ActorHandle {
     pub role: String,
 }
 
+impl ActorHandle {
+    pub fn normalized_role(&self) -> String {
+        normalize_role_label(&self.role)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPriority {
@@ -166,4 +172,21 @@ pub enum PlanOwner {
     Human(String),
     Agent(String),
     System(String),
+}
+
+pub fn normalize_role_label(role: &str) -> String {
+    let mut normalized = String::new();
+    let mut last_was_separator = false;
+
+    for ch in role.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator && !normalized.is_empty() {
+            normalized.push('_');
+            last_was_separator = true;
+        }
+    }
+
+    normalized.trim_matches('_').to_string()
 }
