@@ -289,6 +289,7 @@ pub struct AlertClusterQueueQuery {
     pub line_id: Option<String>,
     pub severity_band: Option<String>,
     pub triage_label: Option<String>,
+    pub recommended_owner_role: Option<String>,
     pub follow_up_owner_id: Option<String>,
     pub unaccepted_follow_up_only: bool,
     pub follow_up_escalation_required: bool,
@@ -2426,6 +2427,10 @@ fn alert_cluster_queue_matches(
             .as_ref()
             .is_none_or(|triage_label| item.triage_label.as_ref() == Some(triage_label))
         && query
+            .recommended_owner_role
+            .as_ref()
+            .is_none_or(|owner_role| item.recommended_owner_role.as_ref() == Some(owner_role))
+        && query
             .follow_up_owner_id
             .as_ref()
             .is_none_or(|owner_id| alert_cluster_queue_item_has_follow_up_owner(item, owner_id))
@@ -4363,6 +4368,15 @@ mod tests {
             .expect("label-filtered alert cluster queue query should succeed");
         assert_eq!(label_items.len(), 1);
         assert_eq!(label_items[0].task_id, scada_task_id);
+
+        let owner_role_items = orchestrator
+            .list_alert_clusters(&AlertClusterQueueQuery {
+                recommended_owner_role: Some("maintenance_engineer".to_string()),
+                ..AlertClusterQueueQuery::default()
+            })
+            .expect("owner-role-filtered alert cluster queue query should succeed");
+        assert_eq!(owner_role_items.len(), 1);
+        assert_eq!(owner_role_items[0].task_id, scada_task_id);
 
         let escalation_items = orchestrator
             .list_alert_clusters(&AlertClusterQueueQuery {

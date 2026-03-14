@@ -1,3 +1,5 @@
+mod experience;
+
 use std::{env, net::SocketAddr, path::PathBuf};
 
 use anyhow::Context;
@@ -9,6 +11,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use experience::{experience_overview, experience_script, experience_shell, experience_styles};
 use fa_core::{
     bootstrap_blueprint, AcceptFollowUpOwnerRequest, AcknowledgeHandoffReceiptRequest,
     AlertClusterMonitoringView, AlertClusterQueueItemView, AlertClusterQueueQuery,
@@ -124,6 +127,7 @@ struct AlertClustersQueryParams {
     line_id: Option<String>,
     severity_band: Option<String>,
     triage_label: Option<String>,
+    recommended_owner_role: Option<String>,
     follow_up_owner_id: Option<String>,
     unaccepted_follow_up_only: bool,
     follow_up_escalation_required: bool,
@@ -143,6 +147,7 @@ impl From<AlertClustersQueryParams> for AlertClusterQueueQuery {
             line_id: value.line_id,
             severity_band: value.severity_band,
             triage_label: value.triage_label,
+            recommended_owner_role: value.recommended_owner_role,
             follow_up_owner_id: value.follow_up_owner_id,
             unaccepted_follow_up_only: value.unaccepted_follow_up_only,
             follow_up_escalation_required: value.follow_up_escalation_required,
@@ -603,7 +608,11 @@ fn build_state_with_storage(
 
 fn app(state: AppState) -> Router {
     Router::new()
+        .route("/", get(experience_shell))
+        .route("/assets/fa-experience.css", get(experience_styles))
+        .route("/assets/fa-experience.js", get(experience_script))
         .route("/healthz", get(healthz))
+        .route("/api/v1/experience/overview", get(experience_overview))
         .route("/api/v1/blueprint", get(blueprint))
         .route("/api/v1/audit/events", get(audit_events))
         .route(
@@ -909,6 +918,16 @@ mod tests {
         })
     }
 
+    async fn text_body(response: axum::response::Response) -> String {
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        String::from_utf8(bytes.to_vec()).unwrap_or_else(|error| {
+            panic!("failed to decode text body with status {status}: {error}")
+        })
+    }
+
     fn json_bucket_count(value: &serde_json::Value, field: &str, key: &str) -> usize {
         value[field]
             .as_array()
@@ -921,6 +940,116 @@ mod tests {
             })
             .and_then(|count| usize::try_from(count).ok())
             .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn experience_shell_route_returns_html() {
+        let response = app(build_state_with_storage(None, None).expect("state should build"))
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should build");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = text_body(response).await;
+        assert!(body.contains("FA 体验指挥中心"));
+        assert!(body.contains("启动演示批次"));
+    }
+
+    #[tokio::test]
+    async fn experience_overview_returns_aggregated_monitoring_and_queue_preview() {
+        let app = build_in_memory_app_with_repository().0;
+
+        let shift_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tasks/intake")
+                    .header("content-type", "application/json")
+                    .body(Body::from(shift_handoff_request()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should build");
+        assert_eq!(shift_response.status(), StatusCode::OK);
+
+        let alert_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tasks/intake")
+                    .header("content-type", "application/json")
+                    .body(Body::from(alert_triage_request()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should build");
+        assert_eq!(alert_response.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/experience/overview")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("response should build");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["service"]["status"], "ok");
+        assert!(
+            body["blueprint"]["pattern_count"]
+                .as_u64()
+                .expect("pattern_count should be numeric")
+                >= 1
+        );
+        assert!(
+            body["monitoring"]["follow_up"]["open_items"]
+                .as_u64()
+                .expect("open_items should be numeric")
+                >= 1
+        );
+        assert!(
+            body["monitoring"]["handoff"]["total_receipts"]
+                .as_u64()
+                .expect("total_receipts should be numeric")
+                >= 1
+        );
+        assert!(
+            body["monitoring"]["alert_cluster"]["total_clusters"]
+                .as_u64()
+                .expect("total_clusters should be numeric")
+                >= 1
+        );
+        assert_eq!(
+            body["queues"]["follow_up_items"]
+                .as_array()
+                .expect("follow_up_items should be an array")
+                .len(),
+            2
+        );
+        assert_eq!(
+            body["queues"]["handoff_receipts"]
+                .as_array()
+                .expect("handoff_receipts should be an array")
+                .len(),
+            1
+        );
+        assert_eq!(
+            body["queues"]["alert_clusters"]
+                .as_array()
+                .expect("alert_clusters should be an array")
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -3167,6 +3296,23 @@ mod tests {
         let label_items = label_json.as_array().expect("label queue list");
         assert_eq!(label_items.len(), 1);
         assert_eq!(label_items[0]["task_id"], ALERT_TASK_ID_2);
+
+        let owner_role_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/alert-clusters?recommended_owner_role=maintenance_engineer")
+                    .method("GET")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("owner-role-filtered alert cluster queue request should succeed");
+        assert_eq!(owner_role_response.status(), StatusCode::OK);
+        let owner_role_json = json_body(owner_role_response).await;
+        let owner_role_items = owner_role_json.as_array().expect("owner-role queue list");
+        assert_eq!(owner_role_items.len(), 1);
+        assert_eq!(owner_role_items[0]["task_id"], ALERT_TASK_ID_2);
 
         let escalation_response = app
             .clone()

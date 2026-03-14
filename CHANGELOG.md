@@ -6,6 +6,13 @@ The format follows Keep a Changelog, and this project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Browser-based `FA Experience Command Center` at `/` for live monitoring, queue review, task dossier inspection, and quick workflow launches
+- Aggregated UI overview endpoint at `GET /api/v1/experience/overview` for platform pulse, monitoring views, and queue previews
+- First experience-layer workflow actions in the UI for approval, execution, completion, follow-up owner acceptance, and shift handoff acknowledgement / escalation
+- Experience direction document covering enterprise UI/UX principles, IA, and phased roadmap
+
 ## [0.2.0] - 2026-03-13
 
 ### Added

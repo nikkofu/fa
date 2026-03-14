@@ -69,6 +69,12 @@ make run
 cargo run -p fa-server
 ```
 
+打开浏览器体验层：
+
+```text
+http://127.0.0.1:8000/
+```
+
 启用文件型本地持久化模式：
 
 ```bash
@@ -120,6 +126,12 @@ curl -sS http://127.0.0.1:8000/healthz
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/blueprint | jq
+```
+
+查看 UI 聚合概览数据：
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/experience/overview | jq
 ```
 
 查看审计事件：
@@ -507,6 +519,7 @@ curl -sS http://127.0.0.1:8000/api/v1/tasks/72c8f5d0-0f08-4e0c-a8c4-1d4dc51a25f0
 - [docs/roadmap.md](docs/roadmap.md)
 - [docs/release-process.md](docs/release-process.md)
 - [docs/release/v0.2.0-release-notes.md](docs/release/v0.2.0-release-notes.md)
+- [docs/design/experience-command-center-direction.md](docs/design/experience-command-center-direction.md)
 - [docs/governance/README.md](docs/governance/README.md)
 - [docs/planning/README.md](docs/planning/README.md)
 - [docs/progress/README.md](docs/progress/README.md)
